@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: stock
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python dashboard.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
