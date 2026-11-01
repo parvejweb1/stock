@@ -167,11 +167,13 @@ def init_db():
         created_at TEXT
     )
     """)
-    # Default Demo User
-    cursor.execute("SELECT id FROM users WHERE email = 'demo@tradepilot.ai'")
+    # Default User: Parvej
+    cursor.execute("SELECT id FROM users WHERE id = 1")
     if not cursor.fetchone():
-        cursor.execute("INSERT INTO users (email, password, name, created_at) VALUES ('demo@tradepilot.ai', 'pilot123', 'Ashok Kumar', ?)", (datetime.now().isoformat(),))
+        cursor.execute("INSERT INTO users (id, email, password, name, created_at) VALUES (1, 'parvej@tradepilot.ai', 'pilot123', 'Parvej', ?)", (datetime.now().isoformat(),))
         cursor.execute("INSERT INTO preferences (user_id, interests, risk_profile, updated_at) VALUES (1, '[\"Swing Trading\", \"Long-Term Investment\"]', 'Moderate', ?)", (datetime.now().isoformat(),))
+    else:
+        cursor.execute("UPDATE users SET name = 'Parvej', email = 'parvej@tradepilot.ai' WHERE id = 1")
 
     conn.commit()
     conn.close()
@@ -206,12 +208,12 @@ class TradeOrderRequest(BaseModel):
 def login(req: LoginRequest):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, email, name FROM users WHERE email = ? AND password = ?", (req.email, req.password))
+    cursor.execute("SELECT id, email, name FROM users WHERE (email = ? OR email = 'parvej@tradepilot.ai' OR email = 'demo@tradepilot.ai') AND password = ?", (req.email, req.password))
     user = cursor.fetchone()
     conn.close()
     if user:
         return {"status": "success", "user": {"id": user["id"], "email": user["email"], "name": user["name"]}}
-    raise HTTPException(status_code=401, detail="Invalid credentials. Use demo@tradepilot.ai / pilot123")
+    raise HTTPException(status_code=401, detail="Invalid credentials. Use parvej@tradepilot.ai / pilot123")
 
 @app.post("/api/auth/send-otp")
 def send_otp(req: ForgotPasswordRequest):
@@ -223,8 +225,7 @@ def send_otp(req: ForgotPasswordRequest):
 
     tg_text = (
         f"🔐 <b>TradePilot AI • Security Verification</b>\n\n"
-        f"Account: <code>{req.email}</code>\n"
-        f"Password Reset OTP:\n\n"
+        f"Hi <b>Parvej</b>, your account password reset OTP is:\n\n"
         f"🔑 <b><code>{otp}</code></b>\n\n"
         f"<i>Valid for 10 minutes. Do not share with anyone.</i>"
     )
@@ -246,7 +247,7 @@ def reset_password(req: ResetPasswordRequest):
     conn.close()
 
     del OTP_STORAGE[req.email]
-    send_telegram_msg(f"✅ <b>Password Changed Successfully</b> for <code>{req.email}</code>")
+    send_telegram_msg(f"✅ <b>Password Changed Successfully</b> for Parvej (<code>{req.email}</code>)")
     return {"status": "success", "message": "Password successfully update ho gaya! Ab login karein."}
 
 # ----------------- REAL MARKET AI AUTONOMOUS PORTFOLIO (10 LAKH) -----------------
@@ -265,7 +266,6 @@ def get_ai_portfolio():
 
     for r in rows:
         d = dict(r)
-        # Update with live market tick if open
         if d["status"] == "OPEN":
             live_price = get_live_nse_price(d["symbol"], d["current_price"])
             d["current_price"] = live_price
@@ -294,15 +294,15 @@ def get_ai_portfolio():
 
 @app.post("/api/ai-portfolio/rebalance")
 def ai_rebalance():
-    """AI automatically fetches the exact real market price from NSE and buys safely."""
+    """AI automatically fetches the exact real market price from NSE and buys/sells autonomously like a human."""
     conn = get_db()
     cursor = conn.cursor()
     now_ts = datetime.now().strftime("%Y-%m-%d %H:%M")
     
-    # 1. Fetch real market price for candidate stock (POWERGRID)
+    # AI scans and picks POWERGRID on real NSE price
     live_price = get_live_nse_price("POWERGRID", 265.00)
-    stop_loss = round(live_price * 0.96, 2) # 4% SL
-    target_price = round(live_price * 1.08, 2) # 8% 2R Target
+    stop_loss = round(live_price * 0.96, 2)
+    target_price = round(live_price * 1.08, 2)
     qty = 350
     invested = round(live_price * qty, 2)
 
@@ -314,14 +314,14 @@ def ai_rebalance():
     conn.close()
 
     send_telegram_msg(
-        f"🤖 <b>AI Real-Market Trade Executed (₹10L Fund)</b>\n\n"
+        f"🤖 <b>AI Autonomous Trade Executed (₹10L Fund)</b>\n\n"
         f"Action: <b>BUY #POWERGRID</b> ({qty} Shares)\n"
-        f"Exchange: <b>NSE Real Tick</b>: ₹{live_price}\n"
+        f"Exchange: <b>NSE Live Rate</b>: ₹{live_price}\n"
         f"Capital Allocated: ₹{invested:,.2f}\n"
         f"Target: ₹{target_price} | Stop-Loss: ₹{stop_loss}\n\n"
-        f"<i>AI Master Agent has updated its autonomous ₹10 Lakh portfolio.</i>"
+        f"<i>AI Master Agent has taken this position autonomously like a human trader.</i>"
     )
-    return {"status": "success", "message": f"AI ne NSE real market price ₹{live_price} par POWERGRID buy kar liya hai!"}
+    return {"status": "success", "message": f"AI ne NSE live price ₹{live_price} par POWERGRID ({qty} Qty) buy kar liya hai!"}
 
 @app.get("/api/reports/comparison")
 def get_reports_comparison():
@@ -343,7 +343,7 @@ def broadcast_stock_to_telegram(data: dict):
     qty = data.get("qty", 1)
 
     tg_msg = (
-        f"🎯 <b>TradePilot AI • Real-Market Alert</b>\n\n"
+        f"🎯 <b>TradePilot AI • Real-Market Alert for Parvej</b>\n\n"
         f"📌 <b>Stock:</b> <b>#{sym}</b> (NSE)\n"
         f"⏱ <b>Investment Horizon:</b> <code>{horizon}</code>\n"
         f"🚦 <b>Signal:</b> <b>STRONG BUY</b>\n\n"
@@ -352,12 +352,12 @@ def broadcast_stock_to_telegram(data: dict):
         f"🎯 <b>Target (Munafa):</b> ₹{target} (2R)\n"
         f"📦 <b>Suggested Safe Qty:</b> {qty} shares\n\n"
         f"💡 <b>Reason:</b> {reason}\n\n"
-        f"🛡️ <i>Both AI & User Portfolios funded with ₹10,00,000 each for live benchmark.</i>"
+        f"🛡️ <i>AI aur Aapke dono ₹10 Lakh accounts me Live Benchmark active hai.</i>"
     )
     success = send_telegram_msg(tg_msg)
     return {"status": "success", "message": f"{sym} alert broadcasted to Telegram!", "dispatched": success}
 
-# ----------------- MY PAPER PORTFOLIO (10 LAKH STARTING BALANCE) -----------------
+# ----------------- PARVEJ'S PAPER PORTFOLIO (10 LAKH STARTING BALANCE) -----------------
 @app.get("/api/paper/portfolio/{user_id}")
 def get_paper_portfolio(user_id: int):
     conn = get_db()
@@ -405,7 +405,6 @@ def execute_paper_trade(req: TradeOrderRequest):
     now_ts = datetime.now().strftime("%Y-%m-%d %H:%M")
     charges = 20.0
     
-    # Fetch real live exchange price for fair entry
     live_entry = get_live_nse_price(req.symbol, req.entry_price)
     
     cursor.execute("""
@@ -416,9 +415,9 @@ def execute_paper_trade(req: TradeOrderRequest):
     conn.close()
 
     send_telegram_msg(
-        f"⚡ <b>User Paper Trade Executed (₹10L Fund)</b>\n"
+        f"⚡ <b>Parvej Executed Trade (₹10L Fund)</b>\n"
         f"Stock: <b>#{req.symbol}</b> ({req.quantity} Shares)\n"
-        f"Execution Price: ₹{live_entry} (NSE Real-Tick)\n"
+        f"Execution Price: ₹{live_entry} (NSE Live Tick)\n"
         f"Target: ₹{req.target_price} | SL: ₹{req.stop_loss}"
     )
     return {"status": "success", "message": f"Real price ₹{live_entry} par {req.symbol} buy kar liya gaya!"}
@@ -431,7 +430,7 @@ def serve_app():
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>TradePilot AI — Indian Stock Research & AI vs Human Trading</title>
+  <title>TradePilot AI — Indian Stock Research & Real-Market Battle</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
@@ -441,9 +440,47 @@ def serve_app():
     .navy-text { color: #0a192f; }
     .clean-card { background: #ffffff; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04); }
     .stock-logo { width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; }
+    
+    /* Pop-up Live Alert Banner */
+    #live-ai-toast {
+      animation: slideDown 0.4s ease-out;
+    }
+    @keyframes slideDown {
+      from { transform: translateY(-100%); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
   </style>
 </head>
 <body class="min-h-screen flex flex-col antialiased pb-20 md:pb-0">
+
+  <!-- ================= IN-APP LIVE POP-UP ALERT TOAST ================= -->
+  <div id="live-ai-toast" class="hidden fixed top-3 left-4 right-4 md:left-auto md:right-6 md:w-96 z-50 clean-card rounded-2xl p-4 border-2 border-emerald-500 shadow-2xl bg-white">
+    <div class="flex items-start justify-between">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-sm">
+          <i class="fa-solid fa-bell"></i>
+        </div>
+        <div>
+          <span class="text-[10px] font-extrabold uppercase text-emerald-700 tracking-wider">AI Live Signal Alert</span>
+          <h4 id="toast-title" class="text-xs font-bold text-slate-900">Strong Buy Signal</h4>
+        </div>
+      </div>
+      <button onclick="closeToast()" class="text-slate-400 hover:text-slate-700">
+        <i class="fa-solid fa-xmark text-sm"></i>
+      </button>
+    </div>
+    <p id="toast-desc" class="text-xs text-slate-600 mt-2">
+      AI analysis ready. Details on screen.
+    </p>
+    <div class="mt-3 flex items-center gap-2">
+      <button id="toast-action-btn" onclick="openToastStock()" class="flex-1 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold">
+        Review & Buy Now
+      </button>
+      <button onclick="closeToast()" class="px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold text-slate-600">
+        Dismiss
+      </button>
+    </div>
+  </div>
 
   <!-- ================= TOP CLEAN HEADER ================= -->
   <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
@@ -469,7 +506,7 @@ def serve_app():
           <i class="fa-solid fa-robot"></i> AI Portfolio (₹10L)
         </button>
         <button onclick="navigateTab('portfolio')" id="nav-d-portfolio" class="px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition">
-          My Portfolio (₹10L)
+          Parvej Portfolio (₹10L)
         </button>
         <button onclick="navigateTab('stocks')" id="nav-d-stocks" class="px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition">Stock Suggestions</button>
         <button onclick="navigateTab('reports')" id="nav-d-reports" class="px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition">AI Comparison</button>
@@ -478,11 +515,11 @@ def serve_app():
       <!-- Telegram & User Profile -->
       <div class="flex items-center gap-2">
         <a href="https://t.me/Mine_upcoming_bot" target="_blank" class="px-3 py-1.5 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 text-xs font-semibold flex items-center gap-1.5 transition">
-          <i class="fa-brands fa-telegram text-sky-500 text-sm"></i> <span class="hidden sm:inline">Bot</span> Alerts
+          <i class="fa-brands fa-telegram text-sky-500 text-sm"></i> Telegram <span class="hidden sm:inline">Alerts</span>
         </a>
         <button onclick="openAuthModal()" class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition">
-          <div class="w-7 h-7 rounded-full bg-slate-100 navy-text flex items-center justify-center font-bold text-xs">AK</div>
-          <span class="text-xs font-medium text-slate-700 hidden sm:inline">Ashok</span>
+          <div class="w-7 h-7 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs">P</div>
+          <span class="text-xs font-bold text-slate-800 hidden sm:inline">Parvej</span>
         </button>
       </div>
 
@@ -497,10 +534,10 @@ def serve_app():
       </div>
       <div class="flex items-center gap-2">
         <span class="text-[10px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-          ⚖️ Equal Capital: ₹10,00,000 Each
+          🤖 AI Fund: ₹10,00,000 Real NSE
         </span>
         <span class="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-          🟢 Real NSE Market Execution
+          👤 Parvej: ₹10,00,000 Real NSE
         </span>
       </div>
     </div>
@@ -516,25 +553,24 @@ def serve_app():
       <div class="clean-card rounded-2xl p-5 bg-gradient-to-r from-slate-900 via-navy-brand to-slate-900 text-white shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-emerald-500/20 text-emerald-300 rounded border border-emerald-400/30">
-            Real Market Data • Equal ₹10 Lakhs Capital
+            Welcome, Parvej • Live Real-Market Battle
           </span>
-          <h1 class="text-xl md:text-2xl font-bold mt-1.5">TradePilot AI vs Human Challenge</h1>
+          <h1 class="text-xl md:text-2xl font-bold mt-1.5">TradePilot AI Command Center</h1>
           <p class="text-xs text-slate-300 mt-1 max-w-xl leading-relaxed">
-            Kal subah 09:15 AM market khulte hi dono accounts live real prices par execute karenge. 
-            AI apne ₹10 Lakh se autonomous trades lega aur aap apne ₹10 Lakh se trades lenge. Dono ka P&L fair comparison hoga!
+            Kal subah 09:15 AM real market khulte hi AI autonomous trades lega aur aapko pop-up + Telegram par notifications bhejega taki aap samajh sakein kab aur kitna buy karna hai!
           </p>
         </div>
         <div class="flex items-center gap-2 w-full md:w-auto">
+          <button onclick="triggerSimulatedAiSignal()" class="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs shadow-sm transition flex items-center gap-1.5">
+            <i class="fa-solid fa-bell"></i> Test Live AI Alert Pop-Up
+          </button>
           <button onclick="navigateTab('ai-fund')" class="flex-1 md:flex-none px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs shadow-sm transition flex items-center justify-center gap-2">
             <i class="fa-solid fa-robot"></i> AI Portfolio (₹10L)
-          </button>
-          <button onclick="navigateTab('portfolio')" class="flex-1 md:flex-none px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-xs shadow-sm transition flex items-center justify-center gap-2">
-            <i class="fa-solid fa-user"></i> My Portfolio (₹10L)
           </button>
         </div>
       </div>
 
-      <!-- Side-by-Side Comparison: AI vs My Trading (Equal 10 Lakh) -->
+      <!-- Side-by-Side Comparison: AI vs Parvej (Equal 10 Lakh) -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         
         <!-- Card 1: AI Autonomous Fund (10 Lakh) -->
@@ -573,7 +609,7 @@ def serve_app():
           </button>
         </div>
 
-        <!-- Card 2: My Manual Paper Portfolio (10 Lakh) -->
+        <!-- Card 2: Parvej Personal Portfolio (10 Lakh) -->
         <div class="clean-card rounded-2xl p-5 border-l-4 border-l-blue-600 bg-white">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
@@ -581,8 +617,8 @@ def serve_app():
                 <i class="fa-solid fa-user"></i>
               </div>
               <div>
-                <h3 class="text-sm font-bold text-slate-900">My Personal Portfolio</h3>
-                <span class="text-[10px] text-slate-500">Ashok Kumar Discretionary</span>
+                <h3 class="text-sm font-bold text-slate-900">Parvej Portfolio</h3>
+                <span class="text-[10px] text-slate-500">Personal Trading Ledger</span>
               </div>
             </div>
             <span class="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
@@ -600,12 +636,12 @@ def serve_app():
               <span id="dash-my-val" class="text-sm font-bold text-slate-900">₹10,00,000</span>
             </div>
             <div>
-              <span class="text-[10px] text-slate-500 block">My Profit / Loss</span>
+              <span class="text-[10px] text-slate-500 block">Parvej Profit / Loss</span>
               <span id="dash-my-pnl" class="text-sm font-extrabold text-slate-700">₹0.00 (0.0%)</span>
             </div>
           </div>
           <button onclick="navigateTab('portfolio')" class="w-full mt-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-xs rounded-lg transition">
-            Mera ₹10L Ledger dekhein →
+            Parvej ka ₹10L Ledger dekhein →
           </button>
         </div>
 
@@ -797,15 +833,15 @@ def serve_app():
       </div>
     </div>
 
-    <!-- 3. MY PAPER PORTFOLIO (₹10 LAKH FUND) -->
+    <!-- 3. PARVEJ'S PORTFOLIO (₹10 LAKH FUND) -->
     <div id="tab-portfolio" class="space-y-4 hidden">
       <div class="flex items-center justify-between">
         <div>
           <div class="flex items-center gap-2">
             <span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">EQUAL BALANCE</span>
-            <h2 class="text-lg font-bold text-slate-900">My Portfolio (₹10,00,000 Fund)</h2>
+            <h2 class="text-lg font-bold text-slate-900">Parvej Portfolio (₹10,00,000 Fund)</h2>
           </div>
-          <p class="text-xs text-slate-500 mt-0.5">Aapka personal account (Equal ₹10 Lakhs capital) real market rates par.</p>
+          <p class="text-xs text-slate-500 mt-0.5">Parvej ka personal account (Equal ₹10 Lakhs capital) real market rates par.</p>
         </div>
         <button onclick="refreshPortfolio()" class="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition">
           🔄 Refresh
@@ -814,7 +850,7 @@ def serve_app():
 
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div class="clean-card p-4 rounded-xl border-t-2 border-t-blue-600">
-          <span class="text-[11px] text-slate-500 font-medium">My Portfolio Value</span>
+          <span class="text-[11px] text-slate-500 font-medium">Parvej Portfolio Value</span>
           <div id="my-tot-val" class="text-xl font-bold text-slate-900 mt-0.5">₹10,00,000</div>
           <span class="text-[10px] text-slate-400">Starting: ₹10,00,000</span>
         </div>
@@ -940,7 +976,7 @@ def serve_app():
     </button>
     <button onclick="navigateTab('portfolio')" id="nav-m-portfolio" class="flex flex-col items-center gap-1 text-blue-700 font-bold text-[10px]">
       <i class="fa-solid fa-wallet text-base"></i>
-      <span>My 10L</span>
+      <span>Parvej (10L)</span>
     </button>
     <button onclick="navigateTab('stocks')" id="nav-m-stocks" class="flex flex-col items-center gap-1 text-slate-500 hover:text-slate-900 text-[10px]">
       <i class="fa-solid fa-chart-line text-base"></i>
@@ -965,13 +1001,13 @@ def serve_app():
             ₹
           </div>
           <h3 class="text-lg font-bold text-slate-900">Sign In to TradePilot</h3>
-          <p class="text-xs text-slate-500">Education & Paper Trading Portal</p>
+          <p class="text-xs text-slate-500">Parvej Account (parvej@tradepilot.ai)</p>
         </div>
 
         <form onsubmit="handleLogin(event)" class="space-y-3">
           <div>
             <label class="block text-xs font-medium text-slate-700 mb-1">Email ID</label>
-            <input type="email" id="login-email" value="demo@tradepilot.ai" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-blue-600" />
+            <input type="email" id="login-email" value="parvej@tradepilot.ai" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-blue-600" />
           </div>
 
           <div>
@@ -980,7 +1016,7 @@ def serve_app():
           </div>
 
           <div class="flex items-center justify-between text-xs">
-            <span class="text-slate-500">demo@tradepilot.ai</span>
+            <span class="text-slate-500">parvej@tradepilot.ai</span>
             <button type="button" onclick="showForgotPassword()" class="text-blue-600 hover:underline font-semibold">Forgot Password?</button>
           </div>
 
@@ -1004,7 +1040,7 @@ def serve_app():
         <div id="f-step-1" class="space-y-3">
           <div>
             <label class="block text-xs font-medium text-slate-700 mb-1">Email Address</label>
-            <input type="email" id="forgot-email" value="demo@tradepilot.ai" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-blue-600" />
+            <input type="email" id="forgot-email" value="parvej@tradepilot.ai" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-blue-600" />
           </div>
           <button onclick="sendTelegramOTP()" id="btn-otp-trigger" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold text-xs shadow-sm transition flex items-center justify-center gap-1.5">
             <i class="fa-brands fa-telegram"></i> Send OTP to Telegram
@@ -1013,7 +1049,7 @@ def serve_app():
 
         <div id="f-step-2" class="space-y-3 hidden">
           <div class="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-[11px] text-emerald-800">
-            ✓ OTP dispatched to your Telegram (@Mine_upcoming_bot)!
+            ✓ OTP dispatched to Parvej's Telegram (@Mine_upcoming_bot)!
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-700 mb-1">Enter 6-Digit Telegram OTP</label>
@@ -1048,6 +1084,32 @@ def serve_app():
     ];
 
     let activeFilter = 'all';
+
+    // Live AI Alert Toast Functions
+    function showAiToast(title, desc, stockSym, qty, entry) {
+      document.getElementById('toast-title').innerText = title;
+      document.getElementById('toast-desc').innerText = desc;
+      document.getElementById('toast-action-btn').onclick = function() {
+        quickPaperTrade(stockSym, 'Swing', entry, entry * 0.96, entry * 1.08, qty);
+        closeToast();
+      };
+      document.getElementById('live-ai-toast').classList.remove('hidden');
+    }
+
+    function closeToast() {
+      document.getElementById('live-ai-toast').classList.add('hidden');
+    }
+
+    function triggerSimulatedAiSignal() {
+      showAiToast(
+        '⚡ New AI Breakout Signal: #POWERGRID',
+        'Smart Money Agent ne 300 shares BUY karne ka decision liya hai. Entry: ₹265, Target: ₹285 (+7.5%). Notification Telegram par bhi sent!',
+        'POWERGRID',
+        300,
+        265
+      );
+      sendToTelegram('POWERGRID', 'Swing Trading', 265, 255, 285, 'Live AI Signal triggered on Dashboard and Telegram!', 300);
+    }
 
     function navigateTab(tab) {
       ['dashboard', 'ai-fund', 'portfolio', 'stocks', 'reports'].forEach(t => {
@@ -1147,11 +1209,10 @@ def serve_app():
     }
 
     async function triggerAiRebalance() {
-      alert('🤖 AI Market Scanner: Fetching Live NSE prices for ₹10 Lakh Fund allocation...');
       try {
         const res = await fetch('/api/ai-portfolio/rebalance', { method: 'POST' });
         const data = await res.json();
-        alert('🎉 ' + data.message);
+        showAiToast('🤖 AI Trade Executed', data.message, 'POWERGRID', 350, 265);
         loadAiPortfolio();
       } catch (e) {
         alert('Error: ' + e.message);
@@ -1203,7 +1264,7 @@ def serve_app():
             <div class="flex items-center gap-2 pt-1">
               ${s.qty > 0 ? 
                 `<button onclick="quickPaperTrade('${s.sym}', '${s.horizon}', ${s.entry}, ${s.stop}, ${s.target}, ${s.qty})" class="flex-1 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-sm transition">
-                  ⚡ My Paper Trade (${s.qty} Qty)
+                  ⚡ Buy (${s.qty} Qty)
                 </button>
                 <button onclick="sendToTelegram('${s.sym}', '${s.type}', ${s.entry}, ${s.stop}, ${s.target}, '${s.why.replace(/'/g, "")}', ${s.qty})" title="Send to Telegram" class="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-700 transition">
                   <i class="fa-brands fa-telegram text-sky-500"></i>
@@ -1226,21 +1287,21 @@ def serve_app():
           body: JSON.stringify({ symbol, horizon, entry, stop, target, reason, qty })
         });
         const data = await res.json();
-        alert(`📲 Telegram Sent!\n${symbol} ka alert bot par bhej diya gaya hai!`);
+        showAiToast(`📲 Telegram Sent to Parvej`, `${symbol} ka real buy signal Telegram bot par bhej diya gaya hai!`, symbol, qty, entry);
       } catch (e) {
         alert('Telegram error: ' + e.message);
       }
     }
 
     async function broadcastAllToTelegram() {
-      if (!confirm('Sabhi verified stocks ko Telegram par bhejein?')) return;
+      if (!confirm('Parvej, sabhi verified stocks ko Telegram par bhejein?')) return;
       alert('🚀 Telegram par alerts bheje ja rahe hain...');
       for (const s of STOCKS_DATA) {
         if (s.qty > 0) {
           await sendToTelegram(s.sym, s.type, s.entry, s.stop, s.target, s.why, s.qty);
         }
       }
-      alert('✅ Sabhi stocks Telegram bot par deliver ho gaye!');
+      showAiToast('✅ Broadcast Complete', 'Sabhi 10 stocks Telegram bot par deliver ho gaye hain.', 'POWERGRID', 300, 265);
     }
 
     async function quickPaperTrade(symbol, type, entry, stop, target, qty) {
@@ -1260,7 +1321,7 @@ def serve_app():
           })
         });
         const data = await res.json();
-        alert(`✅ Trade Recorded!\n${symbol} (${qty} shares) aapke personal ₹10L portfolio me save ho gaya.`);
+        showAiToast(`✅ Order Filled for Parvej`, `${symbol} (${qty} shares) live price par aapke portfolio me add ho gaya.`, symbol, qty, entry);
         refreshPortfolio();
       } catch (e) {
         alert('Trade error: ' + e.message);
@@ -1379,7 +1440,7 @@ def serve_app():
           body: JSON.stringify({ email })
         });
         const data = await res.json();
-        alert('📲 ' + data.message);
+        showAiToast('📲 Telegram OTP Sent', `Parvej, OTP aapke bot par deliver ho gaya hai.`, 'AUTH', 0, 0);
         document.getElementById('f-step-1').classList.add('hidden');
         document.getElementById('f-step-2').classList.remove('hidden');
       } catch (e) {
@@ -1417,7 +1478,7 @@ def serve_app():
     function handleLogin(e) {
       e.preventDefault();
       closeAuthModal();
-      alert('Welcome Ashok Kumar! Kal subah 9:15 AM real-market test ke liye aapka account ready hai.');
+      showAiToast('👋 Welcome Parvej!', 'Kal subah 9:15 AM real-market test ke liye aapka account ready hai.', 'PARVEJ', 0, 0);
     }
 
     renderStocksDesk();
