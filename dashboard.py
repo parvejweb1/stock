@@ -7,8 +7,8 @@ import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException, Depends
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -27,7 +27,7 @@ DB_PATH = WORKSPACE_DIR / "trader" / "tradepilot.db"
 CONFIG_PATH = WORKSPACE_DIR / "trader" / "config.json"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-# In-memory OTP storage for forgot password
+# In-memory OTP storage
 OTP_STORAGE = {}
 
 # ----------------- TELEGRAM HELPER -----------------
@@ -72,7 +72,6 @@ def get_db():
 def init_db():
     conn = get_db()
     cursor = conn.cursor()
-    # Users table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,7 +81,6 @@ def init_db():
         created_at TEXT
     )
     """)
-    # User Preferences table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS preferences (
         user_id INTEGER PRIMARY KEY,
@@ -91,51 +89,47 @@ def init_db():
         updated_at TEXT
     )
     """)
-    # Paper Trading Portfolio & Trades table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS paper_trades (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
         symbol TEXT NOT NULL,
-        trade_type TEXT NOT NULL, -- swing, intraday, longterm, fno
-        side TEXT NOT NULL, -- BUY, SELL
+        trade_type TEXT NOT NULL,
+        side TEXT NOT NULL,
         entry_price REAL NOT NULL,
         current_price REAL,
         stop_loss REAL NOT NULL,
         target_price REAL NOT NULL,
         quantity INTEGER NOT NULL,
-        status TEXT NOT NULL, -- OPEN, CLOSED_TARGET, CLOSED_STOP, CANCELLED
+        status TEXT NOT NULL,
         pnl REAL DEFAULT 0.0,
         charges REAL DEFAULT 0.0,
         created_at TEXT,
         closed_at TEXT
     )
     """)
-    # AI Predictions Verification & Real-Market Comparison table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS agent_predictions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         agent_name TEXT NOT NULL,
         symbol TEXT NOT NULL,
         trade_type TEXT NOT NULL,
-        recommendation TEXT NOT NULL, -- BUY, ACCUMULATE, AVOID
+        recommendation TEXT NOT NULL,
         suggested_entry REAL,
         actual_market_price REAL,
         target_price REAL,
         stop_loss REAL,
-        outcome_status TEXT DEFAULT 'PENDING', -- TARGET_HIT (Win), STOP_LOSS_HIT (Loss), RUNNING (Active)
+        outcome_status TEXT DEFAULT 'PENDING',
         pnl_pct REAL DEFAULT 0.0,
         reasoning TEXT,
         created_at TEXT
     )
     """)
-    # Insert demo user if not exists
     cursor.execute("SELECT id FROM users WHERE email = 'demo@tradepilot.ai'")
     if not cursor.fetchone():
         cursor.execute("INSERT INTO users (email, password, name, created_at) VALUES ('demo@tradepilot.ai', 'pilot123', 'Ashok Kumar', ?)", (datetime.now().isoformat(),))
         cursor.execute("INSERT INTO preferences (user_id, interests, risk_profile, updated_at) VALUES (1, '[\"Swing Trading\", \"Long-Term Investment\"]', 'Moderate', ?)", (datetime.now().isoformat(),))
     
-    # Seed historical verified predictions for all 11 agents
     cursor.execute("SELECT count(*) as cnt FROM agent_predictions")
     if cursor.fetchone()["cnt"] == 0:
         sample_reports = [
@@ -210,11 +204,11 @@ def send_otp(req: ForgotPasswordRequest):
     }
 
     tg_text = (
-        f"🔐 <b>TradePilot AI Security Alert</b>\n\n"
-        f"<b>Password Reset Request</b> for account: <code>{req.email}</code>\n"
-        f"Your One-Time Password (OTP) is:\n\n"
+        f"🔐 <b>TradePilot AI • Security Verification</b>\n\n"
+        f"Account: <code>{req.email}</code>\n"
+        f"Password Reset OTP:\n\n"
         f"🔑 <b><code>{otp}</code></b>\n\n"
-        f"<i>This OTP is valid for 10 minutes. Do not share this with anyone.</i>"
+        f"<i>Valid for 10 minutes. Kisi ke sath share na karein.</i>"
     )
     sent = send_telegram_msg(tg_text)
     return {"status": "success", "message": "OTP aapke Telegram account par bhej diya gaya hai!", "telegram_dispatched": sent}
@@ -223,9 +217,9 @@ def send_otp(req: ForgotPasswordRequest):
 def reset_password(req: ResetPasswordRequest):
     record = OTP_STORAGE.get(req.email)
     if not record or record["otp"] != req.otp.strip():
-        raise HTTPException(status_code=400, detail="Galat OTP ya expire ho gaya hai! Kripya dobara try karein.")
+        raise HTTPException(status_code=400, detail="Galat OTP ya expire ho gaya hai!")
     if datetime.now() > record["expires_at"]:
-        raise HTTPException(status_code=400, detail="OTP expire ho chuka hai. Kripya naya OTP request karein.")
+        raise HTTPException(status_code=400, detail="OTP expire ho chuka hai.")
 
     conn = get_db()
     cursor = conn.cursor()
@@ -234,12 +228,8 @@ def reset_password(req: ResetPasswordRequest):
     conn.close()
 
     del OTP_STORAGE[req.email]
-    
-    send_telegram_msg(
-        f"✅ <b>Password Changed Successfully</b>\n"
-        f"TradePilot AI account (<code>{req.email}</code>) ka password update ho gaya hai."
-    )
-    return {"status": "success", "message": "Password successfully update ho gaya! Ab naye password se login karein."}
+    send_telegram_msg(f"✅ <b>Password Changed Successfully</b> for <code>{req.email}</code>")
+    return {"status": "success", "message": "Password successfully update ho gaya! Ab login karein."}
 
 @app.get("/api/user/{user_id}/preferences")
 def get_preferences(user_id: int):
@@ -264,33 +254,18 @@ def update_preferences(req: PreferenceRequest):
     conn.close()
     return {"status": "success"}
 
-@app.get("/api/market/overview")
-def get_market_overview():
-    return {
-        "indices": {
-            "nifty50": {"price": "23,053.10", "change": "+142.30", "pct": "+0.62%"},
-            "sensex": {"price": "75,810.45", "change": "+450.15", "pct": "+0.60%"},
-            "banknifty": {"price": "51,240.80", "change": "-45.20", "pct": "-0.09%"},
-            "giftnifty": {"price": "23,120.00", "change": "+65.00", "pct": "+0.28%"},
-            "crude": {"price": "$71.40", "change": "-0.85%", "pct": "-0.85%"},
-            "gold": {"price": "₹78,450", "change": "+0.25%", "pct": "+0.25%"}
-        },
-        "market_mood": "Mildly Bullish",
-        "global_cues": "Positive US Close, Stable Crude Oil"
-    }
-
 @app.get("/api/agents/performance")
 def get_agents_performance():
     return [
         {"agent": "Technical Agent", "focus": "20D Breakouts, RSI & MACD", "predictions": 48, "accuracy": "77.1%", "pnl": "+₹14,250", "status": "Strong"},
-        {"agent": "Fundamental Agent", "focus": "Screener.in P&L, Debt & OPM", "predictions": 36, "accuracy": "82.4%", "pnl": "+₹21,800", "status": "High Conviction"},
-        {"agent": "Smart Money & Deals Agent", "focus": "NSE Bulk, Block & SEBI PIT", "predictions": 32, "accuracy": "84.3%", "pnl": "+₹24,100", "status": "Top Performer"},
+        {"agent": "Fundamental Agent", "focus": "Screener.in P&L, Debt & OPM", "predictions": 36, "accuracy": "82.4%", "pnl": "+₹21,800", "status": "Consistent"},
+        {"agent": "Smart Money & Deals Agent", "focus": "NSE Bulk, Block & SEBI PIT", "predictions": 32, "accuracy": "84.3%", "pnl": "+₹24,100", "status": "Top Leader"},
         {"agent": "Global Macro Agent", "focus": "Crude, DXY & US Market Cues", "predictions": 41, "accuracy": "68.2%", "pnl": "+₹7,800", "status": "Moderate"},
-        {"agent": "Government Policy Agent", "focus": "RBI, Union Budget & Sectoral PLI", "predictions": 24, "accuracy": "83.3%", "pnl": "+₹16,500", "status": "Strong"},
-        {"agent": "Financial News Agent", "focus": "NSE Filings, Order Wins & Press", "predictions": 54, "accuracy": "75.9%", "pnl": "+₹11,900", "status": "Consistent"},
-        {"agent": "Risk Sizing Agent", "focus": "Capital Shield (Max ₹20 Loss)", "predictions": 150, "accuracy": "98.0%", "pnl": "Shielded", "status": "Active Guard"},
+        {"agent": "Government Policy Agent", "focus": "RBI, Union Budget & PLI", "predictions": 24, "accuracy": "83.3%", "pnl": "+₹16,500", "status": "Strong"},
+        {"agent": "Financial News Agent", "focus": "NSE Filings & Corporate Press", "predictions": 54, "accuracy": "75.9%", "pnl": "+₹11,900", "status": "Active"},
+        {"agent": "Risk Sizing Agent", "focus": "Capital Shield (Max ₹20 Loss)", "predictions": 150, "accuracy": "98.0%", "pnl": "Shielded", "status": "Strict Guard"},
         {"agent": "Backtesting Time Machine", "focus": "10,000 Historical Simulations", "predictions": 65, "accuracy": "79.1%", "pnl": "+₹19,400", "status": "Empirical Proof"},
-        {"agent": "Corporate Earnings Agent", "focus": "Quarterly Results & Concalls", "predictions": 28, "accuracy": "81.0%", "pnl": "+₹15,200", "status": "Consistent"},
+        {"agent": "Corporate Earnings Agent", "focus": "Quarterly Results & Concalls", "predictions": 28, "accuracy": "81.0%", "pnl": "+₹15,200", "status": "High Conviction"},
         {"agent": "Market Sentiment Agent", "focus": "Advance/Decline & FII/DII Flow", "predictions": 45, "accuracy": "71.4%", "pnl": "+₹9,300", "status": "Moderate"},
         {"agent": "AI Master Decision Agent", "focus": "Unified Multi-Agent Consensus", "predictions": 58, "accuracy": "86.2%", "pnl": "+₹31,450", "status": "Supreme Engine"}
     ]
@@ -315,16 +290,16 @@ def broadcast_stock_to_telegram(data: dict):
     qty = data.get("qty", 1)
 
     tg_msg = (
-        f"🎯 <b>TradePilot AI • New Stock Recommendation</b>\n\n"
+        f"🎯 <b>TradePilot AI • Verified Stock Alert</b>\n\n"
         f"📌 <b>Stock:</b> <b>#{sym}</b> (NSE)\n"
         f"⏱ <b>Investment Horizon:</b> <code>{horizon}</code>\n"
-        f"🚦 <b>Action:</b> <b>STRONG BUY</b>\n\n"
+        f"🚦 <b>Signal:</b> <b>STRONG BUY</b>\n\n"
         f"💵 <b>Kharido Price (Entry):</b> ₹{entry}\n"
         f"🛑 <b>Stop Loss (Safe Exit):</b> ₹{stop}\n"
-        f"🎯 <b>Target (Munafa):</b> ₹{target} (2R Return)\n"
+        f"🎯 <b>Target (Munafa):</b> ₹{target} (2R)\n"
         f"📦 <b>Suggested Safe Qty:</b> {qty} shares\n\n"
-        f"💡 <b>AI Analysis:</b> {reason}\n\n"
-        f"🛡️ <i>Risk Shield Active: Capital strictly protected (Max ₹20 loss limit). Paper trade available on dashboard!</i>"
+        f"💡 <b>Reason:</b> {reason}\n\n"
+        f"🛡️ <i>Risk Shield Active (Max ₹20 loss per trade). Paper trade recorded.</i>"
     )
     success = send_telegram_msg(tg_msg)
     return {"status": "success", "message": f"{sym} alert broadcasted to Telegram!", "dispatched": success}
@@ -364,7 +339,6 @@ def execute_paper_trade(req: TradeOrderRequest):
     conn.commit()
     conn.close()
 
-    # Also notify telegram about user paper trade execution
     send_telegram_msg(
         f"⚡ <b>Paper Trade Executed</b>\n"
         f"Stock: <b>#{req.symbol}</b> ({req.quantity} Shares)\n"
@@ -372,776 +346,601 @@ def execute_paper_trade(req: TradeOrderRequest):
     )
     return {"status": "success", "message": f"Virtual trade executed for {req.symbol} ({req.quantity} shares)"}
 
-# ----------------- FULL HTML CLIENT INTERFACE (Next-Gen UI) -----------------
+# ----------------- CLEAN PHONE-FIRST WHITE & NAVY BLUE UI -----------------
 @app.get("/", response_class=HTMLResponse)
 def serve_app():
     return HTMLResponse(content="""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TradePilot AI — Indian Stock Market Research & Multi-Agent Verification Desk</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>TradePilot AI — Indian Stock Research & Paper Trading</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&display=swap');
-    body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #0b1120; color: #f8fafc; }
-    .navy-sidebar { background: #070d19; border-right: 1px solid rgba(255, 255, 255, 0.06); }
-    .glass-card { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.07); }
-    .glass-card:hover { border-color: rgba(99, 102, 241, 0.3); }
-    .btn-gradient { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); }
-    .btn-gradient:hover { background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%); }
-    .stock-badge-logo { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 15px; }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    body { font-family: 'Inter', -apple-system, sans-serif; background-color: #f8fafc; color: #0f172a; -webkit-tap-highlight-color: transparent; }
+    .navy-brand { background-color: #0a192f; }
+    .navy-text { color: #0a192f; }
+    .navy-border { border-color: #0a192f; }
+    .clean-card { background: #ffffff; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04); }
+    .stock-logo { width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; }
   </style>
 </head>
-<body class="min-h-screen flex">
+<body class="min-h-screen flex flex-col antialiased pb-20 md:pb-0">
 
-  <!-- ================= AUTH, FORGOT PASS & ONBOARDING OVERLAY ================= -->
-  <div id="auth-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md hidden">
-    <div class="glass-card max-w-md w-full p-8 rounded-3xl shadow-2xl relative border border-slate-700/60">
+  <!-- ================= TOP CLEAN HEADER ================= -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
       
-      <!-- 1. LOGIN VIEW -->
-      <div id="view-login" class="space-y-5">
-        <div class="text-center space-y-2">
-          <div class="w-14 h-14 rounded-2xl bg-blue-600/20 text-blue-400 mx-auto flex items-center justify-center text-2xl font-black border border-blue-500/30">
-            ₹
-          </div>
-          <h2 class="text-2xl font-extrabold text-white tracking-tight">TradePilot AI</h2>
-          <p class="text-xs text-slate-400">Institutional Grade Multi-Agent Research Portal</p>
-        </div>
-
-        <form onsubmit="handleLogin(event)" class="space-y-4">
-          <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1">Email / User ID</label>
-            <input type="email" id="login-email" value="demo@tradepilot.ai" required class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500" />
-          </div>
-
-          <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1">Password</label>
-            <input type="password" id="login-pass" value="pilot123" required class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500" />
-          </div>
-
-          <div class="flex items-center justify-between text-xs text-slate-400">
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked class="w-3.5 h-3.5 rounded text-blue-600" />
-              <span>Remember Me</span>
-            </label>
-            <button type="button" onclick="showForgotPassword()" class="text-blue-400 hover:underline">Forgot Password?</button>
-          </div>
-
-          <button type="submit" class="w-full btn-gradient py-3 rounded-xl font-bold text-sm text-white shadow-lg transition">
-            Sign In to Research Desk →
-          </button>
-        </form>
-
-        <div class="p-3 bg-blue-950/40 border border-blue-800/40 rounded-xl text-[11px] text-blue-300 leading-relaxed text-center">
-          <b>Welcome to TradePilot AI.</b> All recommendations are for educational and paper trading purposes. No real money will be placed without your confirmation.
-        </div>
-      </div>
-
-      <!-- 2. FORGOT PASSWORD & TELEGRAM OTP VIEW -->
-      <div id="view-forgot" class="space-y-5 hidden">
-        <div>
-          <button onclick="backToLogin()" class="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 mb-2">
-            <i class="fa-solid fa-arrow-left"></i> Back to Login
-          </button>
-          <div class="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xl mb-3 border border-emerald-500/30">
-            <i class="fa-brands fa-telegram"></i>
-          </div>
-          <h2 class="text-xl font-black text-white">Reset Password via Telegram OTP</h2>
-          <p class="text-xs text-slate-400 mt-1">Aapke Telegram bot (@Mine_upcoming_bot) par secret 6-digit OTP aayega.</p>
-        </div>
-
-        <div id="step-send-otp" class="space-y-4">
-          <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1">Registered Email ID</label>
-            <input type="email" id="forgot-email" value="demo@tradepilot.ai" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500" />
-          </div>
-          <button onclick="sendTelegramOTP()" id="btn-request-otp" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs shadow-lg transition flex items-center justify-center gap-2">
-            <i class="fa-solid fa-paper-plane"></i> Send OTP to Telegram Phone
-          </button>
-        </div>
-
-        <div id="step-verify-otp" class="space-y-4 hidden">
-          <div class="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-300 flex items-center gap-2">
-            <i class="fa-solid fa-circle-check"></i> OTP has been dispatched to your Telegram!
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1">Enter 6-Digit Telegram OTP</label>
-            <input type="text" id="reset-otp" placeholder="e.g. 849301" maxlength="6" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs font-mono tracking-widest text-center text-emerald-400 text-base focus:outline-none focus:border-emerald-500" />
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1">New Password</label>
-            <input type="password" id="reset-new-pass" placeholder="Enter new strong password" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500" />
-          </div>
-          <button onclick="submitPasswordReset()" class="w-full btn-gradient py-3 rounded-xl font-bold text-xs text-white shadow-lg transition">
-            Verify OTP & Save New Password →
-          </button>
-        </div>
-      </div>
-
-      <!-- 3. STRATEGY ONBOARDING VIEW -->
-      <div id="view-onboarding" class="space-y-5 hidden">
-        <div>
-          <span class="text-xs font-bold text-blue-400 uppercase tracking-wider">Step 2 of 2</span>
-          <h2 class="text-xl font-black text-white mt-1">What type of investment are you interested in?</h2>
-          <p class="text-xs text-slate-400 mt-1">Select one or more horizons to tailor your 11 AI Agents:</p>
-        </div>
-
-        <div class="space-y-2.5">
-          <label class="flex items-center justify-between p-3.5 rounded-xl border border-slate-700 bg-slate-900/60 cursor-pointer hover:border-blue-500 transition">
-            <div class="flex items-center gap-3">
-              <i class="fa-solid fa-seedling text-emerald-400"></i>
-              <div>
-                <div class="text-xs font-bold text-white">Long-Term Investment</div>
-                <div class="text-[10px] text-slate-400">Fundamental compounding, Screener financials</div>
-              </div>
-            </div>
-            <input type="checkbox" name="pref" value="Long-Term Investment" checked class="w-4 h-4 rounded text-blue-600" />
-          </label>
-
-          <label class="flex items-center justify-between p-3.5 rounded-xl border border-slate-700 bg-slate-900/60 cursor-pointer hover:border-blue-500 transition">
-            <div class="flex items-center gap-3">
-              <i class="fa-solid fa-chart-line text-emerald-400"></i>
-              <div>
-                <div class="text-xs font-bold text-white">Swing Trading (CNC)</div>
-                <div class="text-[10px] text-slate-400">3 to 10 days 20D breakouts (Job-Friendly)</div>
-              </div>
-            </div>
-            <input type="checkbox" name="pref" value="Swing Trading" checked class="w-4 h-4 rounded text-blue-600" />
-          </label>
-
-          <label class="flex items-center justify-between p-3.5 rounded-xl border border-slate-700 bg-slate-900/60 cursor-pointer hover:border-amber-500 transition">
-            <div class="flex items-center gap-3">
-              <i class="fa-solid fa-bolt text-amber-400"></i>
-              <div>
-                <div class="text-xs font-bold text-white">Intraday Trading (MIS)</div>
-                <div class="text-[10px] text-slate-400">09:15 to 15:10 IST same-day scalping</div>
-              </div>
-            </div>
-            <input type="checkbox" name="pref" value="Intraday Trading" class="w-4 h-4 rounded text-blue-600" />
-          </label>
-
-          <label class="flex items-center justify-between p-3.5 rounded-xl border border-slate-700 bg-slate-900/60 cursor-pointer hover:border-purple-500 transition">
-            <div class="flex items-center gap-3">
-              <i class="fa-solid fa-cubes text-purple-400"></i>
-              <div>
-                <div class="text-xs font-bold text-white">Futures & Options (F&O)</div>
-                <div class="text-[10px] text-slate-400">Nifty/Stock derivatives with lot guard</div>
-              </div>
-            </div>
-            <input type="checkbox" name="pref" value="Futures & Options" class="w-4 h-4 rounded text-blue-600" />
-          </label>
-        </div>
-
-        <button onclick="saveOnboarding()" class="w-full btn-gradient py-3 rounded-xl font-bold text-sm text-white shadow-lg transition">
-          Continue to Dashboard →
-        </button>
-      </div>
-
-    </div>
-  </div>
-
-  <!-- ================= MASTER APPLICATION SIDEBAR ================= -->
-  <aside class="w-64 navy-sidebar flex-shrink-0 flex flex-col justify-between hidden md:flex h-screen sticky top-0">
-    <div class="p-6 space-y-6 overflow-y-auto">
-      
-      <!-- Brand Logo -->
-      <div class="flex items-center gap-3">
-        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-black text-white text-lg shadow-lg">
+      <!-- Brand -->
+      <div class="flex items-center gap-2.5 cursor-pointer" onclick="navigateTab('dashboard')">
+        <div class="w-9 h-9 rounded-xl navy-brand text-white flex items-center justify-center font-extrabold text-base shadow-sm">
           ₹
         </div>
         <div>
-          <h1 class="text-base font-extrabold tracking-tight text-white">TradePilot AI</h1>
-          <span class="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">NSE / BSE Live</span>
+          <span class="text-base font-extrabold tracking-tight text-slate-900 block leading-tight">TradePilot AI</span>
+          <span class="text-[10px] font-semibold text-emerald-600 flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> NSE Live Active
+          </span>
         </div>
       </div>
 
-      <!-- Navigation Links -->
-      <div class="space-y-1">
-        <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-3 mb-2">Navigation</div>
-        
-        <button onclick="navigatePage('dashboard')" id="nav-dashboard" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-blue-600 text-white shadow-md transition">
-          <i class="fa-solid fa-grid-2 text-sm w-4"></i> Dashboard
-        </button>
-        <button onclick="navigatePage('suggestions')" id="nav-suggestions" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800/60 transition">
-          <i class="fa-solid fa-bullseye text-sm w-4"></i> Stock Suggestions (Logo)
-        </button>
-        <button onclick="navigatePage('reports')" id="nav-reports" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800/60 transition">
-          <i class="fa-solid fa-clipboard-check text-sm w-4 text-emerald-400"></i> AI Comparison Report
-        </button>
-        <button onclick="navigatePage('paper')" id="nav-paper" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800/60 transition">
-          <i class="fa-solid fa-briefcase text-sm w-4"></i> Paper Trading Portfolio
-        </button>
-        <button onclick="navigatePage('agents')" id="nav-agents" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800/60 transition">
-          <i class="fa-solid fa-robot text-sm w-4"></i> 11 AI Agents Hub
-        </button>
-        <button onclick="navigatePage('intelligence')" id="nav-intelligence" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800/60 transition">
-          <i class="fa-solid fa-globe text-sm w-4"></i> Market Intelligence
-        </button>
-      </div>
+      <!-- Desktop Navigation Pills -->
+      <nav class="hidden md:flex items-center gap-1">
+        <button onclick="navigateTab('dashboard')" id="nav-d-dashboard" class="px-3.5 py-2 rounded-lg text-xs font-semibold navy-brand text-white transition">Dashboard</button>
+        <button onclick="navigateTab('stocks')" id="nav-d-stocks" class="px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition">Stock Suggestions</button>
+        <button onclick="navigateTab('reports')" id="nav-d-reports" class="px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition">AI Comparison</button>
+        <button onclick="navigateTab('portfolio')" id="nav-d-portfolio" class="px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition">Paper Trading</button>
+        <button onclick="navigateTab('agents')" id="nav-d-agents" class="px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition">11 AI Agents</button>
+      </nav>
 
-      <!-- Settings & Support -->
-      <div class="space-y-1 pt-4 border-t border-slate-800">
-        <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-3 mb-2">System</div>
-        <button onclick="openAuthModal()" class="w-full flex items-center gap-3 px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800/60 transition">
-          <i class="fa-solid fa-user text-sm w-4"></i> Account & Preferences
-        </button>
-        <a href="https://t.me/Mine_upcoming_bot" target="_blank" class="w-full flex items-center gap-3 px-3.5 py-2 rounded-xl text-xs font-semibold text-emerald-400 hover:bg-emerald-500/10 transition">
-          <i class="fa-brands fa-telegram text-sm w-4"></i> Telegram Alerts (24x7)
+      <!-- User Profile & Telegram Alert Button -->
+      <div class="flex items-center gap-2">
+        <a href="https://t.me/Mine_upcoming_bot" target="_blank" class="px-3 py-1.5 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 text-xs font-semibold flex items-center gap-1.5 transition">
+          <i class="fa-brands fa-telegram text-sky-500 text-sm"></i> <span class="hidden sm:inline">Bot</span> Alerts
         </a>
+        <button onclick="openAuthModal()" class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition">
+          <div class="w-7 h-7 rounded-full bg-slate-100 navy-text flex items-center justify-center font-bold text-xs">AK</div>
+          <span class="text-xs font-medium text-slate-700 hidden sm:inline">Ashok</span>
+        </button>
       </div>
+
     </div>
 
-    <!-- User Profile Bar -->
-    <div class="p-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between">
-      <div class="flex items-center gap-2.5">
-        <div class="w-8 h-8 rounded-full bg-blue-600/30 text-blue-400 flex items-center justify-center font-bold text-xs border border-blue-500/30">
-          AK
-        </div>
-        <div>
-          <div class="text-xs font-bold text-white">Ashok Kumar</div>
-          <div class="text-[10px] text-slate-400">demo@tradepilot.ai</div>
-        </div>
+    <!-- Ticker Bar (Phone Friendly) -->
+    <div class="bg-slate-50 border-t border-slate-200/80 px-4 py-2 flex items-center justify-between text-xs overflow-x-auto whitespace-nowrap gap-4 scrollbar-none">
+      <div class="flex items-center gap-4 text-[11px] font-medium text-slate-600">
+        <div>NIFTY 50: <b class="text-slate-900">23,053</b> <span class="text-emerald-600 font-bold">+0.62% ↑</span></div>
+        <div>SENSEX: <b class="text-slate-900">75,810</b> <span class="text-emerald-600 font-bold">+0.60% ↑</span></div>
+        <div>CRUDE: <b class="text-slate-900">$71.40</b> <span class="text-rose-600 font-bold">-0.85% ↓</span></div>
       </div>
-      <button onclick="logout()" class="text-slate-400 hover:text-rose-400 text-xs">
-        <i class="fa-solid fa-arrow-right-from-bracket"></i>
-      </button>
+      <span class="text-[10px] font-semibold text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
+        Capital Guard: ₹20 Max Loss
+      </span>
     </div>
-  </aside>
+  </header>
 
-  <!-- ================= MAIN CONTENT WORKSPACE ================= -->
-  <div class="flex-1 flex flex-col min-h-screen overflow-x-hidden">
+  <!-- ================= MAIN APP BODY ================= -->
+  <main class="max-w-7xl mx-auto px-4 py-5 w-full flex-1">
     
-    <!-- Top Global Indices Ticker -->
-    <div class="bg-slate-950/80 border-b border-slate-800/80 px-4 md:px-8 py-2.5 flex items-center justify-between text-xs overflow-x-auto gap-6 whitespace-nowrap">
-      <div class="flex items-center gap-5">
-        <div class="flex items-center gap-2">
-          <span class="font-bold text-slate-400">NIFTY 50:</span>
-          <span class="font-extrabold text-white">23,053.10</span>
-          <span class="text-emerald-400 font-bold">+0.62% ↑</span>
+    <!-- 1. DASHBOARD TAB -->
+    <div id="tab-dashboard" class="space-y-5">
+      
+      <!-- Clean Welcome Banner -->
+      <div class="clean-card rounded-2xl p-5 bg-gradient-to-r from-blue-900 via-slate-900 to-navy-brand text-white shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div>
+          <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-blue-500/20 text-blue-200 rounded-md border border-blue-400/30">
+            Welcome back, Ashok Kumar
+          </span>
+          <h1 class="text-xl md:text-2xl font-bold mt-1.5">TradePilot AI Research Desk</h1>
+          <p class="text-xs text-slate-300 mt-1 max-w-xl leading-relaxed">
+            11 AI Agents technical patterns, Screener balance sheets aur SEBI promoter deals scan karke verified setups provide kar rahe hain.
+          </p>
         </div>
-        <div class="flex items-center gap-2">
-          <span class="font-bold text-slate-400">SENSEX:</span>
-          <span class="font-extrabold text-white">75,810.45</span>
-          <span class="text-emerald-400 font-bold">+0.60% ↑</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="font-bold text-slate-400">GIFT NIFTY:</span>
-          <span class="font-extrabold text-white">23,120.00</span>
-          <span class="text-emerald-400 font-bold">+0.28% ↑</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="font-bold text-slate-400">CRUDE OIL:</span>
-          <span class="font-extrabold text-white">$71.40</span>
-          <span class="text-rose-400 font-bold">-0.85% ↓</span>
+        <div class="flex items-center gap-2 w-full md:w-auto">
+          <button onclick="navigateTab('stocks')" class="flex-1 md:flex-none px-4 py-2.5 bg-white text-slate-900 hover:bg-slate-100 rounded-xl font-bold text-xs shadow-sm transition">
+            View Today's Stock Picks →
+          </button>
+          <button onclick="broadcastAllToTelegram()" class="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition flex items-center gap-1.5">
+            <i class="fa-brands fa-telegram"></i> Telegram Sync
+          </button>
         </div>
       </div>
 
-      <div class="flex items-center gap-3">
-        <span class="px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[11px] font-bold">
-          Market Status: Regular NSE Open
-        </span>
+      <!-- 4 Clean Metric Cards -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div class="clean-card p-4 rounded-xl">
+          <span class="text-[11px] font-medium text-slate-500">Virtual Portfolio</span>
+          <div id="dash-cash" class="text-xl font-bold text-slate-900 mt-0.5">₹1,00,000</div>
+          <span class="text-[10px] text-emerald-600 font-semibold">+₹0.00 Simulated P&L</span>
+        </div>
+
+        <div class="clean-card p-4 rounded-xl">
+          <span class="text-[11px] font-medium text-slate-500">Top Performing Agent</span>
+          <div class="text-xl font-bold text-slate-900 mt-0.5">Smart Money</div>
+          <span class="text-[10px] text-emerald-600 font-semibold">84.3% Accuracy (32 Trades)</span>
+        </div>
+
+        <div class="clean-card p-4 rounded-xl">
+          <span class="text-[11px] font-medium text-slate-500">Risk Shield Rule</span>
+          <div class="text-xl font-bold text-slate-900 mt-0.5">₹20 Max Loss</div>
+          <span class="text-[10px] text-slate-500">Small Capital Safe Mode</span>
+        </div>
+
+        <div class="clean-card p-4 rounded-xl">
+          <span class="text-[11px] font-medium text-slate-500">Phone Alert Bot</span>
+          <div class="text-xl font-bold text-slate-900 mt-0.5 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span> Connected
+          </div>
+          <span class="text-[10px] text-slate-500">Telegram Instant Alerts</span>
+        </div>
+      </div>
+
+      <!-- High Conviction Stock Picks (Featured) -->
+      <div class="clean-card rounded-2xl p-5">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div>
+            <h2 class="text-base font-bold text-slate-900">Today's High-Conviction Stock Suggestions</h2>
+            <p class="text-xs text-slate-500">Safe entry, exact stop-loss and 2R profit targets:</p>
+          </div>
+          <button onclick="navigateTab('stocks')" class="text-xs font-bold text-blue-600 hover:underline">
+            View All 10 Stocks →
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+          
+          <!-- POWERGRID -->
+          <div class="border border-slate-200 rounded-xl p-4 bg-white hover:border-blue-400 transition flex flex-col justify-between space-y-3">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center gap-3">
+                <div class="stock-logo bg-amber-50 text-amber-700 border border-amber-200">⚡</div>
+                <div>
+                  <h3 class="text-sm font-bold text-slate-900">POWERGRID</h3>
+                  <span class="text-[11px] text-slate-500">Power Transmission PSU</span>
+                </div>
+              </div>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                Swing (20D)
+              </span>
+            </div>
+            <div class="bg-slate-50 p-3 rounded-lg text-xs space-y-1">
+              <div class="flex justify-between text-slate-600"><span>Kharido Price:</span> <b class="text-slate-900">₹265.00</b></div>
+              <div class="flex justify-between text-slate-600"><span>Stop Loss:</span> <b class="text-rose-600">₹255.00</b></div>
+              <div class="flex justify-between text-slate-600"><span>Target (Munafa):</span> <b class="text-emerald-700 font-bold">₹285.00 (2R)</b></div>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="quickPaperTrade('POWERGRID', 'Swing', 265, 255, 285, 3)" class="flex-1 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-sm transition">
+                ⚡ Paper Trade (3 Qty)
+              </button>
+              <button onclick="sendToTelegram('POWERGRID', 'Swing Trading', 265, 255, 285, '20-Day High Breakout on Maharatna PSU', 3)" title="Send Alert to Telegram" class="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-700 transition">
+                <i class="fa-brands fa-telegram text-sky-500"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- INFY -->
+          <div class="border border-slate-200 rounded-xl p-4 bg-white hover:border-blue-400 transition flex flex-col justify-between space-y-3">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center gap-3">
+                <div class="stock-logo bg-blue-50 text-blue-700 border border-blue-200">INF</div>
+                <div>
+                  <h3 class="text-sm font-bold text-slate-900">INFY</h3>
+                  <span class="text-[11px] text-slate-500">Infosys IT Services</span>
+                </div>
+              </div>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                Swing (CNC)
+              </span>
+            </div>
+            <div class="bg-slate-50 p-3 rounded-lg text-xs space-y-1">
+              <div class="flex justify-between text-slate-600"><span>Kharido Price:</span> <b class="text-slate-900">₹1,185.00</b></div>
+              <div class="flex justify-between text-slate-600"><span>Stop Loss:</span> <b class="text-rose-600">₹1,160.00</b></div>
+              <div class="flex justify-between text-slate-600"><span>Target (Munafa):</span> <b class="text-emerald-700 font-bold">₹1,235.00</b></div>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="quickPaperTrade('INFY', 'Swing', 1185, 1160, 1235, 1)" class="flex-1 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-sm transition">
+                ⚡ Paper Trade (1 Qty)
+              </button>
+              <button onclick="sendToTelegram('INFY', 'Swing Trading', 1185, 1160, 1235, 'IT Sector Surge & Multi-million AI order wins', 1)" title="Send Alert to Telegram" class="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-700 transition">
+                <i class="fa-brands fa-telegram text-sky-500"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- RELIANCE -->
+          <div class="border border-slate-200 rounded-xl p-4 bg-white hover:border-blue-400 transition flex flex-col justify-between space-y-3">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center gap-3">
+                <div class="stock-logo bg-indigo-50 text-indigo-700 border border-indigo-200">REL</div>
+                <div>
+                  <h3 class="text-sm font-bold text-slate-900">RELIANCE</h3>
+                  <span class="text-[11px] text-slate-500">Jio, Retail & Oil</span>
+                </div>
+              </div>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                Long-Term
+              </span>
+            </div>
+            <div class="bg-slate-50 p-3 rounded-lg text-xs space-y-1">
+              <div class="flex justify-between text-slate-600"><span>Accumulate Range:</span> <b class="text-slate-900">₹1,150 - ₹1,200</b></div>
+              <div class="flex justify-between text-slate-600"><span>Stop Loss:</span> <b class="text-slate-400">Optional (Holding)</b></div>
+              <div class="flex justify-between text-slate-600"><span>Target:</span> <b class="text-emerald-700 font-bold">Multi-Year 1,300+</b></div>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="quickPaperTrade('RELIANCE', 'Long-Term', 1164, 1120, 1300, 1)" class="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-sm transition">
+                ⚡ Accumulate (1 Qty)
+              </button>
+              <button onclick="sendToTelegram('RELIANCE', 'Long-Term Investment', 1164, 1120, 1300, 'Promoters stake increase & Jio Retail Cashflow', 1)" title="Send Alert to Telegram" class="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-700 transition">
+                <i class="fa-brands fa-telegram text-sky-500"></i>
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 2. STOCKS TAB (CLEAN LOGO-WISE DESK) -->
+    <div id="tab-stocks" class="space-y-4 hidden">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 class="text-lg font-bold text-slate-900">All Stock Suggestions (Logo & Horizon)</h2>
+          <p class="text-xs text-slate-500">Choose horizon to see tailored recommendations:</p>
+        </div>
+        <button onclick="broadcastAllToTelegram()" class="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 transition">
+          <i class="fa-brands fa-telegram"></i> Broadcast All to Telegram
+        </button>
+      </div>
+
+      <!-- Filter Tabs -->
+      <div class="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+        <button onclick="filterStocks('all')" id="btn-f-all" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white transition">All Stocks (10)</button>
+        <button onclick="filterStocks('Long-Term')" id="btn-f-long" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition">Long-Term</button>
+        <button onclick="filterStocks('Swing')" id="btn-f-swing" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition">Swing Trading</button>
+        <button onclick="filterStocks('Intraday')" id="btn-f-intra" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition">Intraday (ORB)</button>
+      </div>
+
+      <div id="stocks-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+        <!-- Injected via javascript -->
       </div>
     </div>
 
-    <!-- MAIN PAGE CONTAINER -->
-    <div class="p-4 md:p-8 space-y-6 flex-1">
+    <!-- 3. AI COMPARISON REPORT TAB -->
+    <div id="tab-reports" class="space-y-4 hidden">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-bold text-slate-900">AI Suggestion vs Real Market Report</h2>
+          <p class="text-xs text-slate-500">AI prediction time par kya price tha aur actual me kya result aaya:</p>
+        </div>
+        <button onclick="loadComparisonReports()" class="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition">
+          🔄 Refresh
+        </button>
+      </div>
+
+      <!-- Stats Grid -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="clean-card p-3.5 rounded-xl">
+          <span class="text-[11px] text-slate-500 font-medium">Total Signals</span>
+          <div id="rep-tot" class="text-xl font-bold text-slate-900">11</div>
+        </div>
+        <div class="clean-card p-3.5 rounded-xl">
+          <span class="text-[11px] text-emerald-600 font-medium">Targets Hit (Wins)</span>
+          <div id="rep-win" class="text-xl font-bold text-emerald-600">3</div>
+        </div>
+        <div class="clean-card p-3.5 rounded-xl">
+          <span class="text-[11px] text-blue-600 font-medium">Currently Active</span>
+          <div id="rep-run" class="text-xl font-bold text-blue-600">7</div>
+        </div>
+        <div class="clean-card p-3.5 rounded-xl">
+          <span class="text-[11px] text-rose-600 font-medium">Stop Loss Breached</span>
+          <div id="rep-los" class="text-xl font-bold text-rose-600">1</div>
+        </div>
+      </div>
+
+      <!-- Comparison Ledger -->
+      <div class="clean-card rounded-xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs whitespace-nowrap">
+            <thead class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] font-bold">
+              <tr>
+                <th class="p-3.5">Agent</th>
+                <th class="p-3.5">Stock</th>
+                <th class="p-3.5">Signal</th>
+                <th class="p-3.5">Suggested Entry</th>
+                <th class="p-3.5">Actual Market Price</th>
+                <th class="p-3.5">Target / SL</th>
+                <th class="p-3.5">Outcome</th>
+                <th class="p-3.5">Real P&L</th>
+                <th class="p-3.5">Supporting Reason</th>
+              </tr>
+            </thead>
+            <tbody id="report-rows" class="divide-y divide-slate-100 text-slate-700">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. PAPER TRADING TAB -->
+    <div id="tab-portfolio" class="space-y-4 hidden">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-bold text-slate-900">Virtual Paper Portfolio</h2>
+          <p class="text-xs text-slate-500">Virtual balance se risk-free trading ledger:</p>
+        </div>
+        <button onclick="refreshPortfolio()" class="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition">
+          🔄 Refresh
+        </button>
+      </div>
+
+      <div class="clean-card p-4 rounded-xl flex items-center justify-between bg-slate-900 text-white">
+        <div>
+          <span class="text-xs text-slate-300 block">Available Virtual Balance</span>
+          <span id="port-cash" class="text-2xl font-bold">₹1,00,000</span>
+        </div>
+        <div class="text-right">
+          <span class="text-xs text-slate-300 block">Invested Capital</span>
+          <span class="text-base font-bold text-emerald-400">₹1,000 (Testing Mode)</span>
+        </div>
+      </div>
+
+      <div class="clean-card rounded-xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs whitespace-nowrap">
+            <thead class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] font-bold">
+              <tr>
+                <th class="p-3.5">Stock</th>
+                <th class="p-3.5">Type</th>
+                <th class="p-3.5">Qty</th>
+                <th class="p-3.5">Entry</th>
+                <th class="p-3.5">SL</th>
+                <th class="p-3.5">Target</th>
+                <th class="p-3.5">Status</th>
+                <th class="p-3.5">Simulated P&L</th>
+              </tr>
+            </thead>
+            <tbody id="paper-rows" class="divide-y divide-slate-100 text-slate-700">
+              <tr>
+                <td colspan="8" class="p-6 text-center text-slate-400">No active trades yet. Suggestions tab se trade execute karein!</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. 11 AI AGENTS HUB TAB -->
+    <div id="tab-agents" class="space-y-4 hidden">
+      <div>
+        <h2 class="text-lg font-bold text-slate-900">11 AI Specialized Agents Roster</h2>
+        <p class="text-xs text-slate-500">Sabhi 11 agents ki independent accuracy aur focus area:</p>
+      </div>
+
+      <div id="agents-grid" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <!-- Dynamically loaded -->
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ================= MOBILE BOTTOM NAVIGATION BAR ================= -->
+  <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex items-center justify-around h-16 z-30 shadow-lg px-2">
+    <button onclick="navigateTab('dashboard')" id="nav-m-dashboard" class="flex flex-col items-center gap-1 text-slate-900 font-bold text-[10px]">
+      <i class="fa-solid fa-house text-base"></i>
+      <span>Home</span>
+    </button>
+    <button onclick="navigateTab('stocks')" id="nav-m-stocks" class="flex flex-col items-center gap-1 text-slate-500 hover:text-slate-900 text-[10px]">
+      <i class="fa-solid fa-chart-line text-base"></i>
+      <span>Picks</span>
+    </button>
+    <button onclick="navigateTab('reports')" id="nav-m-reports" class="flex flex-col items-center gap-1 text-slate-500 hover:text-slate-900 text-[10px]">
+      <i class="fa-solid fa-clipboard-check text-base"></i>
+      <span>Reports</span>
+    </button>
+    <button onclick="navigateTab('portfolio')" id="nav-m-portfolio" class="flex flex-col items-center gap-1 text-slate-500 hover:text-slate-900 text-[10px]">
+      <i class="fa-solid fa-wallet text-base"></i>
+      <span>Paper</span>
+    </button>
+    <button onclick="navigateTab('agents')" id="nav-m-agents" class="flex flex-col items-center gap-1 text-slate-500 hover:text-slate-900 text-[10px]">
+      <i class="fa-solid fa-robot text-base"></i>
+      <span>Agents</span>
+    </button>
+  </nav>
+
+  <!-- ================= AUTH MODAL WITH TELEGRAM OTP ================= -->
+  <div id="auth-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm hidden">
+    <div class="clean-card max-w-sm w-full p-6 rounded-2xl shadow-xl relative bg-white">
       
-      <!-- PAGE 1: MAIN DASHBOARD -->
-      <div id="page-dashboard" class="space-y-6">
+      <!-- Close Button -->
+      <button onclick="closeAuthModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-700">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+
+      <!-- Login View -->
+      <div id="m-view-login" class="space-y-4">
+        <div class="text-center">
+          <div class="w-12 h-12 rounded-xl navy-brand text-white mx-auto flex items-center justify-center text-xl font-bold shadow-sm mb-2">
+            ₹
+          </div>
+          <h3 class="text-lg font-bold text-slate-900">Sign In to TradePilot</h3>
+          <p class="text-xs text-slate-500">Education & Paper Trading Portal</p>
+        </div>
+
+        <form onsubmit="handleLogin(event)" class="space-y-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-700 mb-1">Email ID</label>
+            <input type="email" id="login-email" value="demo@tradepilot.ai" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-blue-600" />
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-slate-700 mb-1">Password</label>
+            <input type="password" id="login-pass" value="pilot123" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-blue-600" />
+          </div>
+
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-slate-500">Demo: demo@tradepilot.ai</span>
+            <button type="button" onclick="showForgotPassword()" class="text-blue-600 hover:underline font-semibold">Forgot Password?</button>
+          </div>
+
+          <button type="submit" class="w-full py-2.5 navy-brand text-white rounded-lg font-semibold text-xs shadow-sm hover:opacity-95 transition">
+            Sign In
+          </button>
+        </form>
+      </div>
+
+      <!-- Forgot Password with Telegram OTP -->
+      <div id="m-view-forgot" class="space-y-4 hidden">
+        <button onclick="backToLogin()" class="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1">
+          <i class="fa-solid fa-arrow-left"></i> Back to Login
+        </button>
         
-        <!-- Welcome Hero -->
-        <div class="glass-card p-6 rounded-3xl relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border border-blue-500/20">
+        <div>
+          <h3 class="text-base font-bold text-slate-900">Telegram OTP Password Reset</h3>
+          <p class="text-xs text-slate-500 mt-0.5">OTP seedha aapke Telegram bot par bhej diya jayega.</p>
+        </div>
+
+        <div id="f-step-1" class="space-y-3">
           <div>
-            <span class="text-xs font-bold text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20">
-              Welcome back, Ashok
-            </span>
-            <h2 class="text-2xl md:text-3xl font-black text-white mt-2">
-              TradePilot AI Command Center
-            </h2>
-            <p class="text-xs text-slate-400 mt-1">
-              11 Specialized Agents currently auditing Indian Markets across Technicals, Screener P&L, and SEBI Insider Filings.
-            </p>
+            <label class="block text-xs font-medium text-slate-700 mb-1">Email Address</label>
+            <input type="email" id="forgot-email" value="demo@tradepilot.ai" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-blue-600" />
           </div>
-          <div class="flex items-center gap-3">
-            <button onclick="navigatePage('reports')" class="px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white transition flex items-center gap-2">
-              <i class="fa-solid fa-chart-pie text-emerald-400"></i> View AI Verification Reports
-            </button>
-            <button onclick="triggerAutopilot()" class="btn-gradient px-6 py-3 rounded-2xl text-xs font-extrabold text-white shadow-xl flex items-center gap-2 transition">
-              <i class="fa-solid fa-bolt"></i> Run Real-Time AI Scan
-            </button>
-          </div>
-        </div>
-
-        <!-- 4 Core Metric Widgets -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div class="glass-card p-4 rounded-2xl">
-            <span class="text-[11px] font-bold text-slate-400 uppercase">Virtual Portfolio</span>
-            <div id="dash-portfolio-val" class="text-2xl font-black text-white mt-1">₹1,00,000</div>
-            <span class="text-[11px] text-emerald-400 font-semibold">+₹0.00 Simulated P&L</span>
-          </div>
-
-          <div class="glass-card p-4 rounded-2xl">
-            <span class="text-[11px] font-bold text-slate-400 uppercase">Top Performing Agent</span>
-            <div class="text-xl font-black text-emerald-400 mt-1">Smart Money Agent</div>
-            <span class="text-[11px] text-slate-400 font-semibold">84.3% Historical Accuracy</span>
-          </div>
-
-          <div class="glass-card p-4 rounded-2xl">
-            <span class="text-[11px] font-bold text-slate-400 uppercase">Active Risk Guard</span>
-            <div class="text-xl font-black text-blue-400 mt-1">₹20 Max Loss / Trade</div>
-            <span class="text-[11px] text-slate-400">Position Sizer Calibrated</span>
-          </div>
-
-          <div class="glass-card p-4 rounded-2xl">
-            <span class="text-[11px] font-bold text-slate-400 uppercase">Phone Alert Sentinel</span>
-            <div class="text-xl font-black text-emerald-400 mt-1 flex items-center gap-1.5">
-              <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span> Active
-            </div>
-            <span class="text-[11px] text-slate-400">Telegram Bot Connected</span>
-          </div>
-        </div>
-
-        <!-- Stock Suggestions Showcase -->
-        <div class="glass-card p-6 rounded-3xl space-y-4">
-          <div class="flex items-center justify-between pb-3 border-b border-slate-800">
-            <div>
-              <h3 class="text-lg font-black text-white">Today's High-Conviction AI Suggestions</h3>
-              <p class="text-xs text-slate-400">Verified by Technical breakout, Screener financials and Risk shield:</p>
-            </div>
-            <button onclick="navigatePage('suggestions')" class="text-xs font-bold text-blue-400 hover:text-blue-300">
-              View All 10 Suggestions (Logo-Style) →
-            </button>
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            
-            <!-- POWERGRID Card -->
-            <div class="p-5 rounded-2xl bg-slate-900/80 border border-emerald-500/30 space-y-3">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                  <div class="stock-badge-logo bg-amber-500/20 text-amber-400 border border-amber-500/30">⚡</div>
-                  <div>
-                    <span class="font-black text-base text-white">POWERGRID</span>
-                    <div class="text-[11px] text-slate-400">Power Transmission PSU</div>
-                  </div>
-                </div>
-                <span class="text-xs font-black px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  BUY (Swing 20D)
-                </span>
-              </div>
-              <div class="text-xs text-slate-300 space-y-1">
-                <div class="flex justify-between"><span>Suggested Entry:</span> <b class="text-white">₹265.00</b></div>
-                <div class="flex justify-between"><span>Stop-Loss:</span> <b class="text-rose-400">₹255.00</b></div>
-                <div class="flex justify-between"><span>Target:</span> <b class="text-emerald-400">₹285.00 (2R Gain)</b></div>
-              </div>
-              <div class="flex items-center gap-2 pt-1">
-                <button onclick="quickPaperTrade('POWERGRID', 'swing', 265, 255, 285, 3)" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-extrabold shadow transition">
-                  ⚡ Paper Trade (3 Qty)
-                </button>
-                <button onclick="sendStockToTelegram('POWERGRID', 'Swing Trading', 265, 255, 285, '20-Day High Breakout on Maharatna PSU', 3)" title="Send to Telegram" class="px-3 py-2 bg-slate-800 hover:bg-emerald-600/30 hover:text-emerald-400 text-slate-300 rounded-xl text-xs font-bold border border-slate-700 transition">
-                  <i class="fa-brands fa-telegram"></i>
-                </button>
-              </div>
-            </div>
-
-            <!-- INFY Card -->
-            <div class="p-5 rounded-2xl bg-slate-900/80 border border-emerald-500/30 space-y-3">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                  <div class="stock-badge-logo bg-blue-500/20 text-blue-400 border border-blue-500/30">INF</div>
-                  <div>
-                    <span class="font-black text-base text-white">INFY</span>
-                    <div class="text-[11px] text-slate-400">Infosys IT Services</div>
-                  </div>
-                </div>
-                <span class="text-xs font-black px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  BUY (IT Surge)
-                </span>
-              </div>
-              <div class="text-xs text-slate-300 space-y-1">
-                <div class="flex justify-between"><span>Suggested Entry:</span> <b class="text-white">₹1,185.00</b></div>
-                <div class="flex justify-between"><span>Stop-Loss:</span> <b class="text-rose-400">₹1,160.00</b></div>
-                <div class="flex justify-between"><span>Target:</span> <b class="text-emerald-400">₹1,235.00</b></div>
-              </div>
-              <div class="flex items-center gap-2 pt-1">
-                <button onclick="quickPaperTrade('INFY', 'swing', 1185, 1160, 1235, 1)" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-extrabold shadow transition">
-                  ⚡ Paper Trade (1 Qty)
-                </button>
-                <button onclick="sendStockToTelegram('INFY', 'Swing Trading', 1185, 1160, 1235, 'IT Sector Surge & Multi-million AI order wins', 1)" title="Send to Telegram" class="px-3 py-2 bg-slate-800 hover:bg-emerald-600/30 hover:text-emerald-400 text-slate-300 rounded-xl text-xs font-bold border border-slate-700 transition">
-                  <i class="fa-brands fa-telegram"></i>
-                </button>
-              </div>
-            </div>
-
-            <!-- RELIANCE Card -->
-            <div class="p-5 rounded-2xl bg-slate-900/80 border border-blue-500/30 space-y-3">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                  <div class="stock-badge-logo bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">REL</div>
-                  <div>
-                    <span class="font-black text-base text-white">RELIANCE</span>
-                    <div class="text-[11px] text-slate-400">Jio, Retail & Oil</div>
-                  </div>
-                </div>
-                <span class="text-xs font-black px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                  ACCUMULATE (Long)
-                </span>
-              </div>
-              <div class="text-xs text-slate-300 space-y-1">
-                <div class="flex justify-between"><span>Accumulate Range:</span> <b class="text-white">₹1,150 - ₹1,200</b></div>
-                <div class="flex justify-between"><span>Stop-Loss:</span> <b class="text-slate-400">Optional (Long Term)</b></div>
-                <div class="flex justify-between"><span>Target:</span> <b class="text-emerald-400">Multi-Year Compounding</b></div>
-              </div>
-              <div class="flex items-center gap-2 pt-1">
-                <button onclick="quickPaperTrade('RELIANCE', 'longterm', 1164, 1120, 1300, 1)" class="flex-1 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-extrabold shadow transition">
-                  ⚡ Accumulate Paper
-                </button>
-                <button onclick="sendStockToTelegram('RELIANCE', 'Long-Term Investment', 1164, 1120, 1300, 'Promoters stake increase & Jio Retail Cashflow', 1)" title="Send to Telegram" class="px-3 py-2 bg-slate-800 hover:bg-emerald-600/30 hover:text-emerald-400 text-slate-300 rounded-xl text-xs font-bold border border-slate-700 transition">
-                  <i class="fa-brands fa-telegram"></i>
-                </button>
-              </div>
-            </div>
-
-          </div>
-        </div>
-
-      </div>
-
-      <!-- PAGE 2: STOCK SUGGESTIONS (FULL 10 STOCKS WITH MODERN LOGOS) -->
-      <div id="page-suggestions" class="space-y-6 hidden">
-        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div class="flex items-center gap-2">
-              <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-500/20 text-blue-400 border border-blue-500/30">LOGO-POWERED DESK</span>
-              <h2 class="text-2xl font-black text-white">Full Stock Suggestion Desk</h2>
-            </div>
-            <p class="text-xs text-slate-400 mt-1">Har stock ka logo, Entry/Stop/Target aur Telegram par direct dispatch karne ka feature.</p>
-          </div>
-          <div class="flex items-center gap-3">
-            <button onclick="broadcastAllSuggestionsToTelegram()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-extrabold transition shadow flex items-center gap-2">
-              <i class="fa-brands fa-telegram"></i> Broadcast All to Telegram
-            </button>
-            <button onclick="navigatePage('dashboard')" class="text-xs text-blue-400 hover:underline">← Back to Dashboard</button>
-          </div>
-        </div>
-
-        <!-- Strategy Filter Chips -->
-        <div class="flex items-center gap-2 overflow-x-auto pb-1">
-          <button onclick="filterLogoGrid('all')" id="btn-filt-all" class="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white transition">All Stocks (10)</button>
-          <button onclick="filterLogoGrid('Long-Term')" id="btn-filt-long" class="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 hover:text-white transition">Long-Term</button>
-          <button onclick="filterLogoGrid('Swing')" id="btn-filt-swing" class="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 hover:text-white transition">Swing Trading</button>
-          <button onclick="filterLogoGrid('Intraday')" id="btn-filt-intra" class="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 hover:text-white transition">Intraday (ORB)</button>
-        </div>
-
-        <div id="full-suggestions-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <!-- Loaded dynamically via script with logos -->
-        </div>
-      </div>
-
-      <!-- PAGE 3: AI PREDICTIONS & REAL-MARKET COMPARISON REPORT -->
-      <div id="page-reports" class="space-y-6 hidden">
-        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div class="flex items-center gap-2">
-              <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">EMPIRICAL BENCHMARK</span>
-              <h2 class="text-2xl font-black text-white">AI Suggestion vs Real Market Report</h2>
-            </div>
-            <p class="text-xs text-slate-400 mt-1">
-              Jab jab AI agent ne trade suggest kiya, tab actual market price kya tha aur target/stop-loss hit hua ya nahi. Har trade ka transparent proof!
-            </p>
-          </div>
-          <button onclick="loadComparisonReports()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-2">
-            🔄 Refresh Comparison Data
+          <button onclick="sendTelegramOTP()" id="btn-otp-trigger" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold text-xs shadow-sm transition flex items-center justify-center gap-1.5">
+            <i class="fa-brands fa-telegram"></i> Send OTP to Telegram
           </button>
         </div>
 
-        <!-- Summary Statistics Cards -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div class="glass-card p-4 rounded-2xl border border-slate-800">
-            <span class="text-[11px] font-bold text-slate-400 uppercase">Total AI Predictions</span>
-            <div id="rep-total" class="text-2xl font-black text-white mt-1">11</div>
-            <span class="text-[11px] text-slate-400">Across 11 Active Agents</span>
+        <div id="f-step-2" class="space-y-3 hidden">
+          <div class="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-[11px] text-emerald-800">
+            ✓ OTP dispatched to your Telegram (@Mine_upcoming_bot)!
           </div>
-          <div class="glass-card p-4 rounded-2xl border border-slate-800">
-            <span class="text-[11px] font-bold text-slate-400 uppercase">Target Achieved (Wins)</span>
-            <div id="rep-wins" class="text-2xl font-black text-emerald-400 mt-1">3</div>
-            <span class="text-[11px] text-emerald-400/80 font-semibold">100% Target Hit Verified</span>
-          </div>
-          <div class="glass-card p-4 rounded-2xl border border-slate-800">
-            <span class="text-[11px] font-bold text-slate-400 uppercase">Currently Active / Running</span>
-            <div id="rep-running" class="text-2xl font-black text-blue-400 mt-1">7</div>
-            <span class="text-[11px] text-blue-400/80 font-semibold">Profits Compounding</span>
-          </div>
-          <div class="glass-card p-4 rounded-2xl border border-slate-800">
-            <span class="text-[11px] font-bold text-slate-400 uppercase">Stop Loss Hit (Losses)</span>
-            <div id="rep-losses" class="text-2xl font-black text-rose-400 mt-1">1</div>
-            <span class="text-[11px] text-slate-400 font-semibold">Safe Risk Shield Guarded</span>
-          </div>
-        </div>
-
-        <!-- Detailed Comparison Table -->
-        <div class="glass-card rounded-3xl overflow-hidden border border-slate-800">
-          <div class="p-5 border-b border-slate-800 flex items-center justify-between">
-            <h3 class="text-sm font-bold text-white flex items-center gap-2">
-              <i class="fa-solid fa-table-list text-blue-400"></i> Live Verification Ledger (Real Market Comparison)
-            </h3>
-            <span class="text-[11px] text-slate-400">Zero-Fabrication Data</span>
-          </div>
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs whitespace-nowrap">
-              <thead class="bg-slate-900/60 text-slate-400 uppercase text-[10px] font-bold border-b border-slate-800">
-                <tr>
-                  <th class="p-4">AI Agent Name</th>
-                  <th class="p-4">Stock</th>
-                  <th class="p-4">Type</th>
-                  <th class="p-4">Signal</th>
-                  <th class="p-4">Suggested Entry</th>
-                  <th class="p-4">Actual Market Price</th>
-                  <th class="p-4">Target / SL</th>
-                  <th class="p-4">Status & Outcome</th>
-                  <th class="p-4">Gain / Loss %</th>
-                  <th class="p-4">AI Logic / Proof</th>
-                </tr>
-              </thead>
-              <tbody id="comparison-table-body" class="divide-y divide-slate-800/60 text-slate-300">
-                <!-- Dynamically populated -->
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- PAGE 4: PAPER TRADING PORTFOLIO -->
-      <div id="page-paper" class="space-y-6 hidden">
-        <div class="flex items-center justify-between">
           <div>
-            <h2 class="text-2xl font-black text-white">Virtual Paper Trading Ledger</h2>
-            <p class="text-xs text-slate-400">Track AI suggestions against live simulated market outcomes.</p>
+            <label class="block text-xs font-medium text-slate-700 mb-1">Enter 6-Digit Telegram OTP</label>
+            <input type="text" id="reset-otp" placeholder="e.g. 583921" maxlength="6" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-center text-sm font-mono tracking-widest text-slate-900 focus:outline-none focus:border-emerald-600" />
           </div>
-          <button onclick="refreshPortfolio()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition">
-            🔄 Refresh Ledger
+          <div>
+            <label class="block text-xs font-medium text-slate-700 mb-1">New Password</label>
+            <input type="password" id="reset-new-pass" placeholder="Naya password likhein" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-blue-600" />
+          </div>
+          <button onclick="submitPasswordReset()" class="w-full py-2.5 navy-brand text-white rounded-lg font-semibold text-xs shadow-sm hover:opacity-95 transition">
+            Verify OTP & Save Password
           </button>
-        </div>
-
-        <div class="glass-card rounded-3xl overflow-hidden border border-slate-800">
-          <div class="p-5 border-b border-slate-800 flex items-center justify-between">
-            <span class="text-xs font-bold text-slate-400 uppercase">Simulated Trading Log</span>
-            <span id="paper-balance-tag" class="text-xs font-black text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
-              Virtual Cash: ₹1,00,000
-            </span>
-          </div>
-
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs">
-              <thead class="bg-slate-900/60 text-slate-400 uppercase text-[10px] font-bold border-b border-slate-800">
-                <tr>
-                  <th class="p-4">Stock</th>
-                  <th class="p-4">Type</th>
-                  <th class="p-4">Qty</th>
-                  <th class="p-4">Entry</th>
-                  <th class="p-4">Stop Loss</th>
-                  <th class="p-4">Target</th>
-                  <th class="p-4">Status</th>
-                  <th class="p-4">Simulated P&L</th>
-                </tr>
-              </thead>
-              <tbody id="paper-table-body" class="divide-y divide-slate-800/60 text-slate-300">
-                <tr>
-                  <td colspan="8" class="p-6 text-center text-slate-500">No active paper trades yet. Execute a trade from the suggestions tab!</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- PAGE 5: 11 AI AGENT ACCURACY HUB (ALL 11 AGENTS) -->
-      <div id="page-agents" class="space-y-6 hidden">
-        <div>
-          <div class="flex items-center gap-2">
-            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-500/20 text-blue-400 border border-blue-500/30">FULL SYSTEM ROSTER</span>
-            <h2 class="text-2xl font-black text-white">All 11 AI Agents Performance & Accuracy Desk</h2>
-          </div>
-          <p class="text-xs text-slate-400 mt-1">Every individual agent's historical track record benchmarked against actual market ticks.</p>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div class="col-span-1 md:col-span-2 glass-card p-5 rounded-3xl space-y-4">
-            <h3 class="text-sm font-bold text-white flex items-center justify-between">
-              <span>Complete 11-Agent Intelligence Grid</span>
-              <span class="text-xs text-emerald-400 font-semibold">100% Operational</span>
-            </h3>
-            <div id="agent-performance-list" class="space-y-2 text-xs">
-              <!-- Loaded dynamically -->
-            </div>
-          </div>
-
-          <div class="glass-card p-5 rounded-3xl space-y-4 flex flex-col justify-between">
-            <div class="space-y-3">
-              <h3 class="text-sm font-bold text-white">Verification Methodology</h3>
-              <p class="text-xs text-slate-400 leading-relaxed">
-                TradePilot AI follows a <b>Zero-Fabrication Empirical Standard</b>. An agent's prediction is only marked as <b>SUCCESS</b> when the actual exchange price hits the exact target before triggering the stop-loss.
-              </p>
-              <div class="p-3 bg-blue-500/10 border border-blue-500/20 rounded-2xl text-xs text-blue-300 space-y-1">
-                <div class="font-bold flex items-center gap-1.5"><i class="fa-solid fa-shield-check"></i> Capital Guard</div>
-                <div>All failed trades and stop-loss breaches are recorded to calculate realistic drawdown and profit factors.</div>
-              </div>
-            </div>
-
-            <div class="p-4 bg-slate-900/80 rounded-2xl border border-slate-800 space-y-2 text-xs">
-              <div class="font-bold text-white">How Agents Collaborate:</div>
-              <div class="text-[11px] text-slate-400">1. Scanner & News find setups</div>
-              <div class="text-[11px] text-slate-400">2. Fundamental & Deals audit health</div>
-              <div class="text-[11px] text-slate-400">3. Time Machine runs 10k simulations</div>
-              <div class="text-[11px] text-slate-400">4. Risk Agent enforces ₹20 max loss</div>
-              <div class="text-[11px] text-slate-400">5. Master Decision Agent triggers signal</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- PAGE 6: MARKET INTELLIGENCE -->
-      <div id="page-intelligence" class="space-y-6 hidden">
-        <div>
-          <h2 class="text-2xl font-black text-white">Market Intelligence & Corporate Announcements</h2>
-          <p class="text-xs text-slate-400">NSE Announcements, SEBI Insider Deals and Screener P&L data.</p>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div class="glass-card p-5 rounded-2xl space-y-3">
-            <h3 class="text-sm font-bold text-emerald-400 flex items-center gap-2">
-              <i class="fa-solid fa-user-tie"></i> Smart Money & Promoter Buying
-            </h3>
-            <div class="space-y-2 text-xs text-slate-300">
-              <div class="p-3 bg-slate-900 rounded-xl border border-slate-800">
-                <div class="font-bold text-white">JINDAL STEEL & POWER (JINDALSTEL)</div>
-                <div class="text-slate-400 mt-0.5">Promoter Group acquired ₹35.59 Cr shares from Open Market.</div>
-              </div>
-              <div class="p-3 bg-slate-900 rounded-xl border border-slate-800">
-                <div class="font-bold text-white">SHAKTI PUMPS (SHAKTIPUMP)</div>
-                <div class="text-slate-400 mt-0.5">Promoters bought ₹15.33 Cr via market purchases. Strong bullish sign.</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="glass-card p-5 rounded-2xl space-y-3">
-            <h3 class="text-sm font-bold text-blue-400 flex items-center gap-2">
-              <i class="fa-solid fa-newspaper"></i> NSE Corporate Filings
-            </h3>
-            <div class="space-y-2 text-xs text-slate-300">
-              <div class="p-3 bg-slate-900 rounded-xl border border-slate-800">
-                <div class="font-bold text-white">RELIANCE INDUSTRIES</div>
-                <div class="text-slate-400 mt-0.5">Q2 Results audio recording and analyst presentation filed with exchange.</div>
-              </div>
-              <div class="p-3 bg-slate-900 rounded-xl border border-slate-800">
-                <div class="font-bold text-white">INFOSYS LIMITED</div>
-                <div class="text-slate-400 mt-0.5">New enterprise AI deployment contracts signed with global retail partners.</div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
     </div>
   </div>
 
+  <!-- ================= JAVASCRIPT LOGIC ================= -->
   <script>
     const STOCKS_DATA = [
-      { sym: 'POWERGRID', name: 'Power Grid Corp', logoText: '⚡', logoBg: 'bg-amber-500/20 text-amber-400 border-amber-500/30', horizon: 'Swing', type: 'Swing (20D)', entry: 265, stop: 255, target: 285, qty: 3, why: '20-Day High Breakout on Maharatna PSU.' },
-      { sym: 'INFY', name: 'Infosys Limited', logoText: 'INF', logoBg: 'bg-blue-500/20 text-blue-400 border-blue-500/30', horizon: 'Swing', type: 'Swing (CNC)', entry: 1185, stop: 1160, target: 1235, qty: 1, why: 'IT Sector Surge & Multi-million AI order wins.' },
-      { sym: 'RELIANCE', name: 'Reliance Industries', logoText: 'REL', logoBg: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30', horizon: 'Long-Term', type: 'Long-Term', entry: 1164, stop: 1120, target: 1300, qty: 1, why: 'Promoters stake increase & Jio Retail Cashflow.' },
-      { sym: 'SBIN', name: 'State Bank of India', logoText: 'SBI', logoBg: 'bg-sky-500/20 text-sky-400 border-sky-500/30', horizon: 'Intraday', type: 'Intraday (ORB)', entry: 820, stop: 805, target: 850, qty: 1, why: 'Lowest bad loans (NPA 0.57%) in 10 years.' },
-      { sym: 'TCS', name: 'Tata Consultancy Services', logoText: 'TCS', logoBg: 'bg-purple-500/20 text-purple-400 border-purple-500/30', horizon: 'Swing', type: 'Swing (CNC)', entry: 2502, stop: 2460, target: 2580, qty: 1, why: 'Bull Flag Continuation Pattern.' },
-      { sym: 'HCLTECH', name: 'HCL Technologies', logoText: 'HCL', logoBg: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30', horizon: 'Intraday', type: 'Intraday (ORB)', entry: 1428, stop: 1390, target: 1495, qty: 1, why: 'RSI 69 Breakout & Solid Dividend Yield.' },
-      { sym: 'NTPC', name: 'NTPC Energy', logoText: 'NTP', logoBg: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30', horizon: 'Long-Term', type: 'Long-Term', entry: 316, stop: 305, target: 338, qty: 3, why: 'Green energy transition & Solar expansion.' },
-      { sym: 'KOTAKBANK', name: 'Kotak Mahindra Bank', logoText: 'KM', logoBg: 'bg-rose-500/20 text-rose-400 border-rose-500/30', horizon: 'Swing', type: 'Swing (CNC)', entry: 461, stop: 445, target: 490, qty: 2, why: 'Digital customer acquisition post-RBI relief.' },
-      { sym: 'CIPLA', name: 'Cipla Pharma', logoText: 'CIP', logoBg: 'bg-teal-500/20 text-teal-400 border-teal-500/30', horizon: 'Swing', type: 'Swing (CNC)', entry: 1378, stop: 1340, target: 1440, qty: 1, why: 'Respiratory medicines market share gain.' },
-      { sym: 'TRENT', name: 'Trent Fashion Retail', logoText: 'TRN', logoBg: 'bg-slate-700 text-slate-300 border-slate-600', horizon: 'Intraday', type: 'Avoid / High Risk', entry: 3017, stop: 2950, target: 3150, qty: 0, why: 'PE Ratio 160+ (Very Expensive). Blocked by risk shield.' }
+      { sym: 'POWERGRID', name: 'Power Grid Corp', logoText: '⚡', logoBg: 'bg-amber-50 text-amber-700 border-amber-200', horizon: 'Swing', type: 'Swing (20D)', entry: 265, stop: 255, target: 285, qty: 3, why: '20-Day High Breakout on Maharatna PSU.' },
+      { sym: 'INFY', name: 'Infosys Limited', logoText: 'INF', logoBg: 'bg-blue-50 text-blue-700 border-blue-200', horizon: 'Swing', type: 'Swing (CNC)', entry: 1185, stop: 1160, target: 1235, qty: 1, why: 'IT Sector Surge & Multi-million AI order wins.' },
+      { sym: 'RELIANCE', name: 'Reliance Industries', logoText: 'REL', logoBg: 'bg-indigo-50 text-indigo-700 border-indigo-200', horizon: 'Long-Term', type: 'Long-Term', entry: 1164, stop: 1120, target: 1300, qty: 1, why: 'Promoters stake increase & Jio Retail Cashflow.' },
+      { sym: 'SBIN', name: 'State Bank of India', logoText: 'SBI', logoBg: 'bg-sky-50 text-sky-700 border-sky-200', horizon: 'Intraday', type: 'Intraday (ORB)', entry: 820, stop: 805, target: 850, qty: 1, why: 'Lowest bad loans (NPA 0.57%) in 10 years.' },
+      { sym: 'TCS', name: 'Tata Consultancy Services', logoText: 'TCS', logoBg: 'bg-purple-50 text-purple-700 border-purple-200', horizon: 'Swing', type: 'Swing (CNC)', entry: 2502, stop: 2460, target: 2580, qty: 1, why: 'Bull Flag Continuation Pattern.' },
+      { sym: 'HCLTECH', name: 'HCL Technologies', logoText: 'HCL', logoBg: 'bg-cyan-50 text-cyan-700 border-cyan-200', horizon: 'Intraday', type: 'Intraday (ORB)', entry: 1428, stop: 1390, target: 1495, qty: 1, why: 'RSI 69 Breakout & Solid Dividend Yield.' },
+      { sym: 'NTPC', name: 'NTPC Energy', logoText: 'NTP', logoBg: 'bg-emerald-50 text-emerald-700 border-emerald-200', horizon: 'Long-Term', type: 'Long-Term', entry: 316, stop: 305, target: 338, qty: 3, why: 'Green energy transition & Solar expansion.' },
+      { sym: 'KOTAKBANK', name: 'Kotak Mahindra Bank', logoText: 'KM', logoBg: 'bg-rose-50 text-rose-700 border-rose-200', horizon: 'Swing', type: 'Swing (CNC)', entry: 461, stop: 445, target: 490, qty: 2, why: 'Digital customer acquisition post-RBI relief.' },
+      { sym: 'CIPLA', name: 'Cipla Pharma', logoText: 'CIP', logoBg: 'bg-teal-50 text-teal-700 border-teal-200', horizon: 'Swing', type: 'Swing (CNC)', entry: 1378, stop: 1340, target: 1440, qty: 1, why: 'Respiratory medicines market share gain.' },
+      { sym: 'TRENT', name: 'Trent Fashion Retail', logoText: 'TRN', logoBg: 'bg-slate-100 text-slate-700 border-slate-300', horizon: 'Intraday', type: 'Avoid / High Risk', entry: 3017, stop: 2950, target: 3150, qty: 0, why: 'PE Ratio 160+ (Very Expensive). Blocked by risk shield.' }
     ];
 
-    let currentFilter = 'all';
+    let activeFilter = 'all';
 
-    function navigatePage(page) {
-      ['dashboard', 'suggestions', 'reports', 'paper', 'agents', 'intelligence'].forEach(p => {
-        const pageEl = document.getElementById('page-' + p);
-        if (pageEl) pageEl.classList.add('hidden');
-        const navBtn = document.getElementById('nav-' + p);
-        if (navBtn) navBtn.className = 'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800/60 transition';
+    function navigateTab(tab) {
+      ['dashboard', 'stocks', 'reports', 'portfolio', 'agents'].forEach(t => {
+        const el = document.getElementById('tab-' + t);
+        if (el) el.classList.add('hidden');
+        
+        // Desktop nav update
+        const btnD = document.getElementById('nav-d-' + t);
+        if (btnD) btnD.className = 'px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition';
+        
+        // Mobile nav update
+        const btnM = document.getElementById('nav-m-' + t);
+        if (btnM) btnM.className = 'flex flex-col items-center gap-1 text-slate-500 hover:text-slate-900 text-[10px]';
       });
 
-      const activePage = document.getElementById('page-' + page);
-      if (activePage) activePage.classList.remove('hidden');
-      const activeBtn = document.getElementById('nav-' + page);
-      if (activeBtn) activeBtn.className = 'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-blue-600 text-white shadow-md transition';
+      const target = document.getElementById('tab-' + tab);
+      if (target) target.classList.remove('hidden');
 
-      if (page === 'reports') loadComparisonReports();
-      if (page === 'paper') refreshPortfolio();
-      if (page === 'agents') loadAgentPerformance();
+      const activeD = document.getElementById('nav-d-' + tab);
+      if (activeD) activeD.className = 'px-3.5 py-2 rounded-lg text-xs font-semibold navy-brand text-white transition';
+
+      const activeM = document.getElementById('nav-m-' + tab);
+      if (activeM) activeM.className = 'flex flex-col items-center gap-1 text-slate-900 font-bold text-[10px]';
+
+      if (tab === 'reports') loadComparisonReports();
+      if (tab === 'portfolio') refreshPortfolio();
+      if (tab === 'agents') loadAgents();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
-    function filterLogoGrid(horizon) {
-      currentFilter = horizon;
+    function filterStocks(horizon) {
+      activeFilter = horizon;
       ['all', 'long', 'swing', 'intra'].forEach(k => {
-        const b = document.getElementById('btn-filt-' + k);
-        if (b) b.className = 'px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 hover:text-white transition';
+        const btn = document.getElementById('btn-f-' + k);
+        if (btn) btn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition';
       });
-      if (horizon === 'all') document.getElementById('btn-filt-all').className = 'px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white transition';
-      else if (horizon === 'Long-Term') document.getElementById('btn-filt-long').className = 'px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white transition';
-      else if (horizon === 'Swing') document.getElementById('btn-filt-swing').className = 'px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white transition';
-      else if (horizon === 'Intraday') document.getElementById('btn-filt-intra').className = 'px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white transition';
+      if (horizon === 'all') document.getElementById('btn-f-all').className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white transition';
+      else if (horizon === 'Long-Term') document.getElementById('btn-f-long').className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white transition';
+      else if (horizon === 'Swing') document.getElementById('btn-f-swing').className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white transition';
+      else if (horizon === 'Intraday') document.getElementById('btn-f-intra').className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white transition';
 
-      renderSuggestions();
+      renderStocksDesk();
     }
 
-    function renderSuggestions() {
+    function renderStocksDesk() {
       let html = '';
-      const filtered = currentFilter === 'all' ? STOCKS_DATA : STOCKS_DATA.filter(s => s.horizon === currentFilter);
-
-      filtered.forEach(s => {
+      const list = activeFilter === 'all' ? STOCKS_DATA : STOCKS_DATA.filter(s => s.horizon === activeFilter);
+      list.forEach(s => {
         html += `
-          <div class="glass-card p-5 rounded-2xl border border-slate-800 flex flex-col justify-between space-y-3">
+          <div class="clean-card rounded-xl p-4 bg-white flex flex-col justify-between space-y-3">
             <div>
-              <div class="flex items-center justify-between">
+              <div class="flex items-start justify-between">
                 <div class="flex items-center gap-3">
-                  <div class="stock-badge-logo ${s.logoBg} border">${s.logoText}</div>
+                  <div class="stock-logo ${s.logoBg} border">${s.logoText}</div>
                   <div>
-                    <span class="font-black text-white text-base">#${s.sym}</span>
-                    <div class="text-[11px] text-slate-400 font-medium">${s.name}</div>
+                    <h3 class="text-sm font-bold text-slate-900">#${s.sym}</h3>
+                    <div class="text-[11px] text-slate-500">${s.name}</div>
                   </div>
                 </div>
-                <span class="text-[11px] font-bold px-2 py-0.5 rounded-full ${s.qty === 0 ? 'bg-rose-500/20 text-rose-400' : 'bg-emerald-500/20 text-emerald-400'}">
+                <span class="text-[10px] font-bold px-2 py-0.5 rounded ${s.qty === 0 ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}">
                   ${s.type}
                 </span>
               </div>
-              <p class="text-xs text-slate-400 mt-2">${s.why}</p>
+              <p class="text-xs text-slate-600 mt-2">${s.why}</p>
             </div>
-            <div class="text-xs text-slate-300 space-y-1 bg-slate-900/60 p-3 rounded-xl border border-slate-800">
-              <div class="flex justify-between"><span>Entry:</span> <b class="text-white">₹${s.entry}</b></div>
-              <div class="flex justify-between"><span>Stop-Loss:</span> <b class="text-rose-400">₹${s.stop}</b></div>
-              <div class="flex justify-between"><span>Target (2R):</span> <b class="text-emerald-400">₹${s.target}</b></div>
+
+            <div class="bg-slate-50 p-2.5 rounded-lg text-xs space-y-1">
+              <div class="flex justify-between text-slate-600"><span>Kharido Price:</span> <b class="text-slate-900">₹${s.entry}</b></div>
+              <div class="flex justify-between text-slate-600"><span>Stop Loss:</span> <b class="text-rose-600">₹${s.stop}</b></div>
+              <div class="flex justify-between text-slate-600"><span>Target (Munafa):</span> <b class="text-emerald-700 font-bold">₹${s.target}</b></div>
             </div>
-            
+
             <div class="flex items-center gap-2 pt-1">
               ${s.qty > 0 ? 
-                `<button onclick="quickPaperTrade('${s.sym}', '${s.horizon}', ${s.entry}, ${s.stop}, ${s.target}, ${s.qty})" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition">
+                `<button onclick="quickPaperTrade('${s.sym}', '${s.horizon}', ${s.entry}, ${s.stop}, ${s.target}, ${s.qty})" class="flex-1 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-sm transition">
                   ⚡ Paper Trade (${s.qty} Qty)
                 </button>
-                <button onclick="sendStockToTelegram('${s.sym}', '${s.type}', ${s.entry}, ${s.stop}, ${s.target}, '${s.why.replace(/'/g, "")}', ${s.qty})" title="Send alert to Telegram" class="px-3.5 py-2 bg-slate-800 hover:bg-emerald-600/30 hover:text-emerald-400 text-slate-300 rounded-xl text-xs font-bold border border-slate-700 transition flex items-center gap-1.5">
-                  <i class="fa-brands fa-telegram text-sm"></i>
+                <button onclick="sendToTelegram('${s.sym}', '${s.type}', ${s.entry}, ${s.stop}, ${s.target}, '${s.why.replace(/'/g, "")}', ${s.qty})" title="Send to Telegram" class="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-700 transition">
+                  <i class="fa-brands fa-telegram text-sky-500"></i>
                 </button>` : 
-                `<button disabled class="w-full py-2 bg-slate-800 text-slate-500 rounded-xl text-xs font-bold cursor-not-allowed">
+                `<button disabled class="w-full py-2 bg-slate-100 text-slate-400 rounded-lg text-xs font-semibold cursor-not-allowed">
                   🔒 Blocked by Risk Shield
                 </button>`
               }
             </div>
           </div>`;
       });
-      document.getElementById('full-suggestions-grid').innerHTML = html;
+      document.getElementById('stocks-container').innerHTML = html;
     }
 
-    async function sendStockToTelegram(symbol, horizon, entry, stop, target, reason, qty) {
+    async function sendToTelegram(symbol, horizon, entry, stop, target, reason, qty) {
       try {
         const res = await fetch('/api/telegram/broadcast-stock', {
           method: 'POST',
@@ -1149,18 +948,18 @@ def serve_app():
           body: JSON.stringify({ symbol, horizon, entry, stop, target, reason, qty })
         });
         const data = await res.json();
-        alert(`📲 Telegram Sent!\n${symbol} ka suggestion Telegram bot par bhej diya gaya hai!`);
+        alert(`📲 Telegram Sent!\n${symbol} ka alert bot par bhej diya gaya hai!`);
       } catch (e) {
-        alert('Telegram broadcast error: ' + e.message);
+        alert('Telegram error: ' + e.message);
       }
     }
 
-    async function broadcastAllSuggestionsToTelegram() {
-      if (!confirm('Kya aap sabhi high-conviction stock suggestions ko Telegram par broadcast karna chahte hain?')) return;
-      alert('🚀 Telegram par sabhi stocks ke signals dispatch ho rahe hain...');
+    async function broadcastAllToTelegram() {
+      if (!confirm('Sabhi verified stocks ko Telegram par bhejein?')) return;
+      alert('🚀 Telegram par alerts bheje ja rahe hain...');
       for (const s of STOCKS_DATA) {
         if (s.qty > 0) {
-          await sendStockToTelegram(s.sym, s.type, s.entry, s.stop, s.target, s.why, s.qty);
+          await sendToTelegram(s.sym, s.type, s.entry, s.stop, s.target, s.why, s.qty);
         }
       }
       alert('✅ Sabhi stocks Telegram bot par deliver ho gaye!');
@@ -1183,7 +982,7 @@ def serve_app():
           })
         });
         const data = await res.json();
-        alert(`✅ Trade Executed! ${symbol} (${qty} shares) paper portfolio me save ho gaya.`);
+        alert(`✅ Trade Recorded!\n${symbol} (${qty} shares) paper ledger me save ho gaya.`);
         refreshPortfolio();
       } catch (e) {
         alert('Trade error: ' + e.message);
@@ -1195,53 +994,26 @@ def serve_app():
         const res = await fetch('/api/paper/portfolio/1');
         const data = await res.json();
 
-        document.getElementById('paper-balance-tag').innerText = `Virtual Cash: ₹${data.virtual_balance.toLocaleString('en-IN')}`;
-        document.getElementById('dash-portfolio-val').innerText = `₹${data.virtual_balance.toLocaleString('en-IN')}`;
+        document.getElementById('port-cash').innerText = `₹${data.virtual_balance.toLocaleString('en-IN')}`;
+        document.getElementById('dash-cash').innerText = `₹${data.virtual_balance.toLocaleString('en-IN')}`;
 
         if (data.trades && data.trades.length > 0) {
           let html = '';
           data.trades.forEach(t => {
             html += `
-              <tr class="hover:bg-slate-900/40">
-                <td class="p-4 font-black text-white">#${t.symbol}</td>
-                <td class="p-4 text-slate-400 uppercase text-[11px]">${t.trade_type}</td>
-                <td class="p-4 font-bold text-white">${t.quantity}</td>
-                <td class="p-4 font-semibold text-white">₹${t.entry_price}</td>
-                <td class="p-4 font-semibold text-rose-400">₹${t.stop_loss}</td>
-                <td class="p-4 font-semibold text-emerald-400">₹${t.target_price}</td>
-                <td class="p-4"><span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">${t.status}</span></td>
-                <td class="p-4 font-bold ${t.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}">₹${t.pnl.toFixed(2)}</td>
+              <tr class="hover:bg-slate-50">
+                <td class="p-3.5 font-bold text-slate-900">#${t.symbol}</td>
+                <td class="p-3.5 text-slate-600 text-[11px]">${t.trade_type}</td>
+                <td class="p-3.5 font-semibold text-slate-900">${t.quantity}</td>
+                <td class="p-3.5 text-slate-700">₹${t.entry_price}</td>
+                <td class="p-3.5 text-rose-600">₹${t.stop_loss}</td>
+                <td class="p-3.5 text-emerald-600 font-bold">₹${t.target_price}</td>
+                <td class="p-3.5"><span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">${t.status}</span></td>
+                <td class="p-3.5 font-bold ${t.pnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}">₹${t.pnl.toFixed(2)}</td>
               </tr>`;
           });
-          document.getElementById('paper-table-body').innerHTML = html;
+          document.getElementById('paper-rows').innerHTML = html;
         }
-      } catch (e) {
-        console.error(e);
-      }
-    }
-
-    async function loadAgentPerformance() {
-      try {
-        const res = await fetch('/api/agents/performance');
-        const data = await res.json();
-        let html = '';
-        data.forEach(a => {
-          html += `
-            <div class="p-3 bg-slate-900/90 rounded-2xl border border-slate-800 flex items-center justify-between hover:border-slate-700 transition">
-              <div class="space-y-0.5">
-                <div class="font-black text-white text-xs flex items-center gap-2">
-                  <span>${a.agent}</span>
-                  <span class="text-[9px] px-1.5 py-0.2 rounded font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">${a.status}</span>
-                </div>
-                <div class="text-[10px] text-slate-400">${a.focus} • <b>${a.predictions}</b> verified setups</div>
-              </div>
-              <div class="text-right">
-                <div class="font-black text-emerald-400 text-sm">${a.accuracy}</div>
-                <div class="text-[10px] font-semibold text-slate-400">Sim P&L: <span class="text-white">${a.pnl}</span></div>
-              </div>
-            </div>`;
-        });
-        document.getElementById('agent-performance-list').innerHTML = html;
       } catch (e) {
         console.error(e);
       }
@@ -1252,53 +1024,64 @@ def serve_app():
         const res = await fetch('/api/reports/comparison');
         const data = await res.json();
         let html = '';
-        let wins = 0;
-        let losses = 0;
-        let running = 0;
+        let wins = 0; let losses = 0; let running = 0;
 
         data.forEach(r => {
           if (r.outcome_status === 'TARGET_HIT') wins++;
           else if (r.outcome_status === 'STOP_LOSS_HIT') losses++;
           else running++;
 
-          let statusBadge = '';
-          if (r.outcome_status === 'TARGET_HIT') {
-            statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">🎯 TARGET HIT</span>';
-          } else if (r.outcome_status === 'STOP_LOSS_HIT') {
-            statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-500/20 text-rose-400 border border-rose-500/30">🛑 STOP LOSS</span>';
-          } else {
-            statusBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-500/20 text-blue-400 border border-blue-500/30">⏳ RUNNING (ACTIVE)</span>';
-          }
-
-          let signalBadge = r.recommendation === 'BUY' ? 'text-emerald-400' : (r.recommendation === 'AVOID' ? 'text-rose-400' : 'text-blue-400');
+          let statusTag = r.outcome_status === 'TARGET_HIT' ?
+            '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">🎯 TARGET HIT</span>' :
+            (r.outcome_status === 'STOP_LOSS_HIT' ?
+              '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">🛑 STOP LOSS</span>' :
+              '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">⏳ ACTIVE</span>');
 
           html += `
-            <tr class="hover:bg-slate-900/40">
-              <td class="p-4 font-bold text-white">${r.agent_name}</td>
-              <td class="p-4 font-black text-white">#${r.symbol}</td>
-              <td class="p-4 text-slate-400 text-[11px]">${r.trade_type}</td>
-              <td class="p-4 font-black ${signalBadge}">${r.recommendation}</td>
-              <td class="p-4 font-semibold text-white">₹${r.suggested_entry.toFixed(2)}</td>
-              <td class="p-4 font-black text-blue-300">₹${r.actual_market_price.toFixed(2)}</td>
-              <td class="p-4 text-[11px]">
-                <div class="text-emerald-400">T: ₹${r.target_price.toFixed(2)}</div>
-                <div class="text-rose-400">SL: ₹${r.stop_loss.toFixed(2)}</div>
-              </td>
-              <td class="p-4">${statusBadge}</td>
-              <td class="p-4 font-black ${r.pnl_pct >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+            <tr class="hover:bg-slate-50">
+              <td class="p-3.5 font-medium text-slate-900">${r.agent_name}</td>
+              <td class="p-3.5 font-bold text-slate-900">#${r.symbol}</td>
+              <td class="p-3.5 font-semibold text-emerald-600">${r.recommendation}</td>
+              <td class="p-3.5 text-slate-800">₹${r.suggested_entry.toFixed(2)}</td>
+              <td class="p-3.5 font-bold text-blue-700">₹${r.actual_market_price.toFixed(2)}</td>
+              <td class="p-3.5 text-[11px] text-slate-600">T: ₹${r.target_price} | SL: ₹${r.stop_loss}</td>
+              <td class="p-3.5">${statusTag}</td>
+              <td class="p-3.5 font-bold ${r.pnl_pct >= 0 ? 'text-emerald-600' : 'text-rose-600'}">
                 ${r.pnl_pct >= 0 ? '+' : ''}${r.pnl_pct.toFixed(2)}%
               </td>
-              <td class="p-4 text-[11px] text-slate-300 max-w-xs truncate" title="${r.reasoning}">
-                ${r.reasoning}
-              </td>
+              <td class="p-3.5 text-slate-500 max-w-xs truncate" title="${r.reasoning}">${r.reasoning}</td>
             </tr>`;
         });
 
-        document.getElementById('comparison-table-body').innerHTML = html;
-        document.getElementById('rep-total').innerText = data.length;
-        document.getElementById('rep-wins').innerText = wins;
-        document.getElementById('rep-losses').innerText = losses;
-        document.getElementById('rep-running').innerText = running;
+        document.getElementById('report-rows').innerHTML = html;
+        document.getElementById('rep-tot').innerText = data.length;
+        document.getElementById('rep-win').innerText = wins;
+        document.getElementById('rep-los').innerText = losses;
+        document.getElementById('rep-run').innerText = running;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function loadAgents() {
+      try {
+        const res = await fetch('/api/agents/performance');
+        const data = await res.json();
+        let html = '';
+        data.forEach(a => {
+          html += `
+            <div class="clean-card p-4 rounded-xl flex items-center justify-between">
+              <div>
+                <div class="font-bold text-sm text-slate-900">${a.agent}</div>
+                <div class="text-xs text-slate-500 mt-0.5">${a.focus} • ${a.predictions} setups</div>
+              </div>
+              <div class="text-right">
+                <div class="font-extrabold text-sm text-emerald-600">${a.accuracy}</div>
+                <div class="text-[10px] text-slate-400">P&L: ${a.pnl}</div>
+              </div>
+            </div>`;
+        });
+        document.getElementById('agents-grid').innerHTML = html;
       } catch (e) {
         console.error(e);
       }
@@ -1306,41 +1089,44 @@ def serve_app():
 
     function openAuthModal() {
       document.getElementById('auth-modal').classList.remove('hidden');
-      document.getElementById('view-login').classList.remove('hidden');
-      document.getElementById('view-forgot').classList.add('hidden');
-      document.getElementById('view-onboarding').classList.add('hidden');
+      document.getElementById('m-view-login').classList.remove('hidden');
+      document.getElementById('m-view-forgot').classList.add('hidden');
+    }
+
+    function closeAuthModal() {
+      document.getElementById('auth-modal').classList.add('hidden');
     }
 
     function showForgotPassword() {
-      document.getElementById('view-login').classList.add('hidden');
-      document.getElementById('view-forgot').classList.remove('hidden');
-      document.getElementById('step-send-otp').classList.remove('hidden');
-      document.getElementById('step-verify-otp').classList.add('hidden');
+      document.getElementById('m-view-login').classList.add('hidden');
+      document.getElementById('m-view-forgot').classList.remove('hidden');
+      document.getElementById('f-step-1').classList.remove('hidden');
+      document.getElementById('f-step-2').classList.add('hidden');
     }
 
     function backToLogin() {
-      document.getElementById('view-forgot').classList.add('hidden');
-      document.getElementById('view-login').classList.remove('hidden');
+      document.getElementById('m-view-forgot').classList.add('hidden');
+      document.getElementById('m-view-login').classList.remove('hidden');
     }
 
     async function sendTelegramOTP() {
       const email = document.getElementById('forgot-email').value;
-      const btn = document.getElementById('btn-request-otp');
-      btn.innerText = 'Sending OTP to Telegram...';
+      const btn = document.getElementById('btn-otp-trigger');
+      btn.innerText = 'Sending OTP...';
       try {
         const res = await fetch('/api/auth/send-otp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: email })
+          body: JSON.stringify({ email })
         });
         const data = await res.json();
         alert('📲 ' + data.message);
-        document.getElementById('step-send-otp').classList.add('hidden');
-        document.getElementById('step-verify-otp').classList.remove('hidden');
+        document.getElementById('f-step-1').classList.add('hidden');
+        document.getElementById('f-step-2').classList.remove('hidden');
       } catch (e) {
-        alert('OTP Error: ' + e.message);
+        alert('OTP error: ' + e.message);
       } finally {
-        btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Send OTP to Telegram Phone';
+        btn.innerHTML = '<i class="fa-brands fa-telegram"></i> Send OTP to Telegram';
       }
     }
 
@@ -1350,7 +1136,7 @@ def serve_app():
       const new_password = document.getElementById('reset-new-pass').value;
 
       if (!otp || !new_password) {
-        alert('Kripya OTP aur Naya Password dono fill karein!');
+        alert('OTP aur Naya Password dono dalein!');
         return;
       }
 
@@ -1365,30 +1151,17 @@ def serve_app():
         document.getElementById('login-pass').value = new_password;
         backToLogin();
       } catch (e) {
-        alert('Reset Error: ' + e.message);
+        alert('Reset error: ' + e.message);
       }
     }
 
     function handleLogin(e) {
       e.preventDefault();
-      document.getElementById('view-login').classList.add('hidden');
-      document.getElementById('view-onboarding').classList.remove('hidden');
+      closeAuthModal();
+      alert('Welcome Ashok Kumar! TradePilot AI ready hai.');
     }
 
-    function saveOnboarding() {
-      document.getElementById('auth-modal').classList.add('hidden');
-      alert('Welcome to TradePilot AI! Your customized desk is ready.');
-    }
-
-    function logout() {
-      openAuthModal();
-    }
-
-    async function triggerAutopilot() {
-      alert('🤖 Running Real-Time AI Market Scan across all 11 Agents... Updates will stream to Telegram!');
-    }
-
-    renderSuggestions();
+    renderStocksDesk();
   </script>
 </body>
 </html>
