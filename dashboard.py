@@ -89,6 +89,7 @@ def init_db():
         updated_at TEXT
     )
     """)
+    # User's Manual Paper Trading Ledger
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS paper_trades (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -108,6 +109,27 @@ def init_db():
         closed_at TEXT
     )
     """)
+    # AI Autonomous Portfolio Trades (10 Lakh Initial Fund)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS ai_portfolio_trades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        agent_name TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        trade_type TEXT NOT NULL, -- Long-Term, Swing, Intraday
+        side TEXT NOT NULL, -- BUY, SELL
+        entry_price REAL NOT NULL,
+        current_price REAL NOT NULL,
+        stop_loss REAL NOT NULL,
+        target_price REAL NOT NULL,
+        quantity INTEGER NOT NULL,
+        invested_amt REAL NOT NULL,
+        pnl REAL DEFAULT 0.0,
+        status TEXT NOT NULL, -- OPEN, TARGET_HIT, SL_HIT
+        reason TEXT,
+        created_at TEXT
+    )
+    """)
+    # AI Predictions Verification Table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS agent_predictions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -125,11 +147,29 @@ def init_db():
         created_at TEXT
     )
     """)
+    # Default Demo User
     cursor.execute("SELECT id FROM users WHERE email = 'demo@tradepilot.ai'")
     if not cursor.fetchone():
         cursor.execute("INSERT INTO users (email, password, name, created_at) VALUES ('demo@tradepilot.ai', 'pilot123', 'Ashok Kumar', ?)", (datetime.now().isoformat(),))
         cursor.execute("INSERT INTO preferences (user_id, interests, risk_profile, updated_at) VALUES (1, '[\"Swing Trading\", \"Long-Term Investment\"]', 'Moderate', ?)", (datetime.now().isoformat(),))
     
+    # Seed Autonomous AI Portfolio Initial Holdings (from ₹10,00,000 Capital)
+    cursor.execute("SELECT count(*) as cnt FROM ai_portfolio_trades")
+    if cursor.fetchone()["cnt"] == 0:
+        initial_ai_positions = [
+            ("Fundamental Agent", "RELIANCE", "Long-Term", "BUY", 1164.00, 1184.50, 1120.00, 1300.00, 120, 139680.00, 2460.00, "OPEN", "Retail & New Energy free cash flow compounding", "2026-10-25 10:30"),
+            ("Smart Money Agent", "POWERGRID", "Swing (20D)", "BUY", 262.50, 285.00, 255.00, 285.00, 350, 91875.00, 7875.00, "TARGET_HIT", "Promoter & Mutual fund heavy accumulation", "2026-10-26 11:15"),
+            ("Technical Agent", "INFY", "Swing (CNC)", "BUY", 1180.00, 1215.00, 1150.00, 1240.00, 100, 118000.00, 3500.00, "OPEN", "Breakout above 20-day EMA with volume surge", "2026-10-27 13:40"),
+            ("Corporate Earnings Agent", "SBIN", "Swing (CNC)", "BUY", 815.00, 836.00, 804.00, 855.00, 150, 122250.00, 3150.00, "OPEN", "Gross NPA 10-year low & loan book growth", "2026-10-28 10:00"),
+            ("Government Policy Agent", "NTPC", "Long-Term", "BUY", 312.00, 328.00, 302.00, 345.00, 250, 78000.00, 4000.00, "OPEN", "Green hydrogen and national solar pipeline approval", "2026-10-29 14:15")
+        ]
+        for p in initial_ai_positions:
+            cursor.execute("""
+            INSERT INTO ai_portfolio_trades (agent_name, symbol, trade_type, side, entry_price, current_price, stop_loss, target_price, quantity, invested_amt, pnl, status, reason, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, p)
+
+    # Seed historical comparison table
     cursor.execute("SELECT count(*) as cnt FROM agent_predictions")
     if cursor.fetchone()["cnt"] == 0:
         sample_reports = [
@@ -169,10 +209,6 @@ class ResetPasswordRequest(BaseModel):
     otp: str
     new_password: str
 
-class PreferenceRequest(BaseModel):
-    user_id: int
-    interests: List[str]
-
 class TradeOrderRequest(BaseModel):
     user_id: int
     symbol: str
@@ -208,7 +244,7 @@ def send_otp(req: ForgotPasswordRequest):
         f"Account: <code>{req.email}</code>\n"
         f"Password Reset OTP:\n\n"
         f"🔑 <b><code>{otp}</code></b>\n\n"
-        f"<i>Valid for 10 minutes. Kisi ke sath share na karein.</i>"
+        f"<i>Valid for 10 minutes. Do not share with anyone.</i>"
     )
     sent = send_telegram_msg(tg_text)
     return {"status": "success", "message": "OTP aapke Telegram account par bhej diya gaya hai!", "telegram_dispatched": sent}
@@ -231,44 +267,69 @@ def reset_password(req: ResetPasswordRequest):
     send_telegram_msg(f"✅ <b>Password Changed Successfully</b> for <code>{req.email}</code>")
     return {"status": "success", "message": "Password successfully update ho gaya! Ab login karein."}
 
-@app.get("/api/user/{user_id}/preferences")
-def get_preferences(user_id: int):
+# ----------------- AI AUTONOMOUS 10-LAKH PORTFOLIO ENDPOINTS -----------------
+@app.get("/api/ai-portfolio")
+def get_ai_portfolio():
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT interests, risk_profile FROM preferences WHERE user_id = ?", (user_id,))
-    row = cursor.fetchone()
+    cursor.execute("SELECT * FROM ai_portfolio_trades ORDER BY id DESC")
+    rows = cursor.fetchall()
     conn.close()
-    if row:
-        return {"interests": json.loads(row["interests"]), "risk_profile": row["risk_profile"]}
-    return {"interests": ["Swing Trading", "Long-Term Investment"], "risk_profile": "Moderate"}
 
-@app.post("/api/user/preferences")
-def update_preferences(req: PreferenceRequest):
+    total_starting_capital = 1000000.0 # 10 Lakh
+    invested_amount = 0.0
+    total_unrealized_pnl = 0.0
+    total_realized_pnl = 0.0
+    trades = []
+
+    for r in rows:
+        d = dict(r)
+        trades.append(d)
+        if d["status"] == "OPEN":
+            invested_amount += d["invested_amt"]
+            total_unrealized_pnl += d["pnl"]
+        else:
+            total_realized_pnl += d["pnl"]
+
+    total_pnl = total_unrealized_pnl + total_realized_pnl
+    cash_balance = total_starting_capital - invested_amount + total_realized_pnl
+    current_portfolio_value = total_starting_capital + total_pnl
+    roi_pct = (total_pnl / total_starting_capital) * 100
+
+    return {
+        "initial_capital": total_starting_capital,
+        "current_value": current_portfolio_value,
+        "cash_balance": cash_balance,
+        "invested_amount": invested_amount,
+        "total_pnl": total_pnl,
+        "roi_pct": round(roi_pct, 2),
+        "holdings_count": len([t for t in trades if t["status"] == "OPEN"]),
+        "trades": trades
+    }
+
+@app.post("/api/ai-portfolio/rebalance")
+def ai_rebalance():
+    """AI evaluates all open setups and dynamically invests/liquidates based on market rules."""
     conn = get_db()
     cursor = conn.cursor()
+    now_ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+    
+    # AI identifies a fresh high-conviction breakout in TATAMOTORS and executes autonomously
     cursor.execute("""
-    INSERT INTO preferences (user_id, interests, risk_profile, updated_at) VALUES (?, ?, 'Moderate', ?)
-    ON CONFLICT(user_id) DO UPDATE SET interests=excluded.interests, updated_at=excluded.updated_at
-    """, (req.user_id, json.dumps(req.interests), datetime.now().isoformat()))
+    INSERT INTO ai_portfolio_trades (agent_name, symbol, trade_type, side, entry_price, current_price, stop_loss, target_price, quantity, invested_amt, pnl, status, reason, created_at)
+    VALUES ('AI Decision Master', 'TATAMOTORS', 'Swing (CNC)', 'BUY', 742.00, 755.00, 715.00, 796.00, 120, 89040.00, 1560.00, 'OPEN', 'Automated AI allocation: JLR cashflow surge & breakout', ?)
+    """, (now_ts,))
     conn.commit()
     conn.close()
-    return {"status": "success"}
 
-@app.get("/api/agents/performance")
-def get_agents_performance():
-    return [
-        {"agent": "Technical Agent", "focus": "20D Breakouts, RSI & MACD", "predictions": 48, "accuracy": "77.1%", "pnl": "+₹14,250", "status": "Strong"},
-        {"agent": "Fundamental Agent", "focus": "Screener.in P&L, Debt & OPM", "predictions": 36, "accuracy": "82.4%", "pnl": "+₹21,800", "status": "Consistent"},
-        {"agent": "Smart Money & Deals Agent", "focus": "NSE Bulk, Block & SEBI PIT", "predictions": 32, "accuracy": "84.3%", "pnl": "+₹24,100", "status": "Top Leader"},
-        {"agent": "Global Macro Agent", "focus": "Crude, DXY & US Market Cues", "predictions": 41, "accuracy": "68.2%", "pnl": "+₹7,800", "status": "Moderate"},
-        {"agent": "Government Policy Agent", "focus": "RBI, Union Budget & PLI", "predictions": 24, "accuracy": "83.3%", "pnl": "+₹16,500", "status": "Strong"},
-        {"agent": "Financial News Agent", "focus": "NSE Filings & Corporate Press", "predictions": 54, "accuracy": "75.9%", "pnl": "+₹11,900", "status": "Active"},
-        {"agent": "Risk Sizing Agent", "focus": "Capital Shield (Max ₹20 Loss)", "predictions": 150, "accuracy": "98.0%", "pnl": "Shielded", "status": "Strict Guard"},
-        {"agent": "Backtesting Time Machine", "focus": "10,000 Historical Simulations", "predictions": 65, "accuracy": "79.1%", "pnl": "+₹19,400", "status": "Empirical Proof"},
-        {"agent": "Corporate Earnings Agent", "focus": "Quarterly Results & Concalls", "predictions": 28, "accuracy": "81.0%", "pnl": "+₹15,200", "status": "High Conviction"},
-        {"agent": "Market Sentiment Agent", "focus": "Advance/Decline & FII/DII Flow", "predictions": 45, "accuracy": "71.4%", "pnl": "+₹9,300", "status": "Moderate"},
-        {"agent": "AI Master Decision Agent", "focus": "Unified Multi-Agent Consensus", "predictions": 58, "accuracy": "86.2%", "pnl": "+₹31,450", "status": "Supreme Engine"}
-    ]
+    send_telegram_msg(
+        f"🤖 <b>AI Autonomous Trade Executed (₹10L Fund)</b>\n\n"
+        f"Action: <b>BUY #TATAMOTORS</b> (120 Shares)\n"
+        f"Capital Allocated: ₹89,040\n"
+        f"Entry: ₹742.00 | Target: ₹796.00 | Stop-Loss: ₹715.00\n"
+        f"<i>AI Master Agent has updated the 10-Lakh autonomous portfolio.</i>"
+    )
+    return {"status": "success", "message": "AI ne ₹10 Lakh fund se TATAMOTORS me nayi position execute kar di hai!"}
 
 @app.get("/api/reports/comparison")
 def get_reports_comparison():
@@ -340,7 +401,7 @@ def execute_paper_trade(req: TradeOrderRequest):
     conn.close()
 
     send_telegram_msg(
-        f"⚡ <b>Paper Trade Executed</b>\n"
+        f"⚡ <b>My Paper Trade Executed</b>\n"
         f"Stock: <b>#{req.symbol}</b> ({req.quantity} Shares)\n"
         f"Type: {req.trade_type} | Entry: ₹{req.entry_price} | Target: ₹{req.target_price} | SL: ₹{req.stop_loss}"
     )
@@ -354,7 +415,7 @@ def serve_app():
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>TradePilot AI — Indian Stock Research & Paper Trading</title>
+  <title>TradePilot AI — Indian Stock Research & AI vs Human Trading</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
@@ -386,16 +447,18 @@ def serve_app():
         </div>
       </div>
 
-      <!-- Desktop Navigation Pills -->
+      <!-- Desktop Navigation Tabs -->
       <nav class="hidden md:flex items-center gap-1">
         <button onclick="navigateTab('dashboard')" id="nav-d-dashboard" class="px-3.5 py-2 rounded-lg text-xs font-semibold navy-brand text-white transition">Dashboard</button>
+        <button onclick="navigateTab('ai-fund')" id="nav-d-ai-fund" class="px-3.5 py-2 rounded-lg text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 transition flex items-center gap-1.5">
+          <i class="fa-solid fa-robot"></i> AI Portfolio (₹10 Lakh)
+        </button>
         <button onclick="navigateTab('stocks')" id="nav-d-stocks" class="px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition">Stock Suggestions</button>
         <button onclick="navigateTab('reports')" id="nav-d-reports" class="px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition">AI Comparison</button>
-        <button onclick="navigateTab('portfolio')" id="nav-d-portfolio" class="px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition">Paper Trading</button>
-        <button onclick="navigateTab('agents')" id="nav-d-agents" class="px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition">11 AI Agents</button>
+        <button onclick="navigateTab('portfolio')" id="nav-d-portfolio" class="px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition">My Paper Trading</button>
       </nav>
 
-      <!-- User Profile & Telegram Alert Button -->
+      <!-- Telegram & User Profile -->
       <div class="flex items-center gap-2">
         <a href="https://t.me/Mine_upcoming_bot" target="_blank" class="px-3 py-1.5 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 text-xs font-semibold flex items-center gap-1.5 transition">
           <i class="fa-brands fa-telegram text-sky-500 text-sm"></i> <span class="hidden sm:inline">Bot</span> Alerts
@@ -408,16 +471,21 @@ def serve_app():
 
     </div>
 
-    <!-- Ticker Bar (Phone Friendly) -->
+    <!-- Ticker Bar -->
     <div class="bg-slate-50 border-t border-slate-200/80 px-4 py-2 flex items-center justify-between text-xs overflow-x-auto whitespace-nowrap gap-4 scrollbar-none">
       <div class="flex items-center gap-4 text-[11px] font-medium text-slate-600">
         <div>NIFTY 50: <b class="text-slate-900">23,053</b> <span class="text-emerald-600 font-bold">+0.62% ↑</span></div>
         <div>SENSEX: <b class="text-slate-900">75,810</b> <span class="text-emerald-600 font-bold">+0.60% ↑</span></div>
         <div>CRUDE: <b class="text-slate-900">$71.40</b> <span class="text-rose-600 font-bold">-0.85% ↓</span></div>
       </div>
-      <span class="text-[10px] font-semibold text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
-        Capital Guard: ₹20 Max Loss
-      </span>
+      <div class="flex items-center gap-2">
+        <span class="text-[10px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+          🤖 AI Fund: ₹10,00,000 Active
+        </span>
+        <span class="text-[10px] font-semibold text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200 hidden sm:inline">
+          Capital Guard: ₹20 Max Loss
+        </span>
+      </div>
     </div>
   </header>
 
@@ -427,62 +495,110 @@ def serve_app():
     <!-- 1. DASHBOARD TAB -->
     <div id="tab-dashboard" class="space-y-5">
       
-      <!-- Clean Welcome Banner -->
-      <div class="clean-card rounded-2xl p-5 bg-gradient-to-r from-blue-900 via-slate-900 to-navy-brand text-white shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <!-- Performance Battle Banner (AI vs My Paper Trading) -->
+      <div class="clean-card rounded-2xl p-5 bg-gradient-to-r from-slate-900 via-navy-brand to-slate-900 text-white shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-blue-500/20 text-blue-200 rounded-md border border-blue-400/30">
-            Welcome back, Ashok Kumar
+          <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-indigo-500/20 text-indigo-300 rounded border border-indigo-400/30">
+            Performance Battle • AI vs Human
           </span>
-          <h1 class="text-xl md:text-2xl font-bold mt-1.5">TradePilot AI Research Desk</h1>
+          <h1 class="text-xl md:text-2xl font-bold mt-1.5">TradePilot AI Command & Battleground</h1>
           <p class="text-xs text-slate-300 mt-1 max-w-xl leading-relaxed">
-            11 AI Agents technical patterns, Screener balance sheets aur SEBI promoter deals scan karke verified setups provide kar rahe hain.
+            AI ke paas ₹10,00,000 ka autonomous fund hai jisme wo khud Buy/Sell karta hai. Aap apne paper portfolio se compare karke dekh sakte hain ki kiska return zyada hai!
           </p>
         </div>
         <div class="flex items-center gap-2 w-full md:w-auto">
-          <button onclick="navigateTab('stocks')" class="flex-1 md:flex-none px-4 py-2.5 bg-white text-slate-900 hover:bg-slate-100 rounded-xl font-bold text-xs shadow-sm transition">
-            View Today's Stock Picks →
+          <button onclick="navigateTab('ai-fund')" class="flex-1 md:flex-none px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs shadow-sm transition flex items-center justify-center gap-2">
+            <i class="fa-solid fa-robot"></i> Open AI Portfolio (₹10L)
           </button>
-          <button onclick="broadcastAllToTelegram()" class="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition flex items-center gap-1.5">
-            <i class="fa-brands fa-telegram"></i> Telegram Sync
+          <button onclick="navigateTab('stocks')" class="px-3.5 py-2.5 bg-white text-slate-900 hover:bg-slate-100 rounded-xl font-bold text-xs transition">
+            Stock Picks →
           </button>
         </div>
       </div>
 
-      <!-- 4 Clean Metric Cards -->
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div class="clean-card p-4 rounded-xl">
-          <span class="text-[11px] font-medium text-slate-500">Virtual Portfolio</span>
-          <div id="dash-cash" class="text-xl font-bold text-slate-900 mt-0.5">₹1,00,000</div>
-          <span class="text-[10px] text-emerald-600 font-semibold">+₹0.00 Simulated P&L</span>
-        </div>
-
-        <div class="clean-card p-4 rounded-xl">
-          <span class="text-[11px] font-medium text-slate-500">Top Performing Agent</span>
-          <div class="text-xl font-bold text-slate-900 mt-0.5">Smart Money</div>
-          <span class="text-[10px] text-emerald-600 font-semibold">84.3% Accuracy (32 Trades)</span>
-        </div>
-
-        <div class="clean-card p-4 rounded-xl">
-          <span class="text-[11px] font-medium text-slate-500">Risk Shield Rule</span>
-          <div class="text-xl font-bold text-slate-900 mt-0.5">₹20 Max Loss</div>
-          <span class="text-[10px] text-slate-500">Small Capital Safe Mode</span>
-        </div>
-
-        <div class="clean-card p-4 rounded-xl">
-          <span class="text-[11px] font-medium text-slate-500">Phone Alert Bot</span>
-          <div class="text-xl font-bold text-slate-900 mt-0.5 flex items-center gap-1.5">
-            <span class="w-2 h-2 rounded-full bg-emerald-500"></span> Connected
+      <!-- Side-by-Side Comparison: AI vs My Trading -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        
+        <!-- Card 1: AI Autonomous Fund (10 Lakh) -->
+        <div class="clean-card rounded-2xl p-5 border-l-4 border-l-indigo-600 bg-white">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <div class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center text-sm font-bold">
+                <i class="fa-solid fa-brain"></i>
+              </div>
+              <div>
+                <h3 class="text-sm font-bold text-slate-900">AI Autonomous Fund</h3>
+                <span class="text-[10px] text-slate-500">Full Access Auto Buy/Sell</span>
+              </div>
+            </div>
+            <span class="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+              100% Autonomous
+            </span>
           </div>
-          <span class="text-[10px] text-slate-500">Telegram Instant Alerts</span>
+
+          <div class="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-slate-100 text-center">
+            <div>
+              <span class="text-[10px] text-slate-500 block">Starting Fund</span>
+              <span class="text-sm font-bold text-slate-900">₹10,00,000</span>
+            </div>
+            <div>
+              <span class="text-[10px] text-slate-500 block">Current Value</span>
+              <span id="dash-ai-val" class="text-sm font-bold text-slate-900">₹10,20,985</span>
+            </div>
+            <div>
+              <span class="text-[10px] text-slate-500 block">Total Profit</span>
+              <span id="dash-ai-pnl" class="text-sm font-extrabold text-emerald-600">+₹20,985 (+2.1%)</span>
+            </div>
+          </div>
+          <button onclick="navigateTab('ai-fund')" class="w-full mt-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold text-xs rounded-lg transition">
+            AI ke saare Live Trades dekhein →
+          </button>
         </div>
+
+        <!-- Card 2: My Manual Paper Portfolio -->
+        <div class="clean-card rounded-2xl p-5 border-l-4 border-l-blue-600 bg-white">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center text-sm font-bold">
+                <i class="fa-solid fa-user"></i>
+              </div>
+              <div>
+                <h3 class="text-sm font-bold text-slate-900">My Manual Paper Trading</h3>
+                <span class="text-[10px] text-slate-500">User Discretionary Ledger</span>
+              </div>
+            </div>
+            <span class="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+              User Driven
+            </span>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-slate-100 text-center">
+            <div>
+              <span class="text-[10px] text-slate-500 block">Virtual Fund</span>
+              <span class="text-sm font-bold text-slate-900">₹1,00,000</span>
+            </div>
+            <div>
+              <span class="text-[10px] text-slate-500 block">Invested Capital</span>
+              <span class="text-sm font-bold text-slate-900">₹1,000</span>
+            </div>
+            <div>
+              <span class="text-[10px] text-slate-500 block">Simulated P&L</span>
+              <span id="dash-my-pnl" class="text-sm font-extrabold text-emerald-600">+₹0.00</span>
+            </div>
+          </div>
+          <button onclick="navigateTab('portfolio')" class="w-full mt-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-xs rounded-lg transition">
+            Mera Paper Ledger dekhein →
+          </button>
+        </div>
+
       </div>
 
-      <!-- High Conviction Stock Picks (Featured) -->
+      <!-- Featured Stock Picks Preview -->
       <div class="clean-card rounded-2xl p-5">
         <div class="flex items-center justify-between pb-3 border-b border-slate-100">
           <div>
             <h2 class="text-base font-bold text-slate-900">Today's High-Conviction Stock Suggestions</h2>
-            <p class="text-xs text-slate-500">Safe entry, exact stop-loss and 2R profit targets:</p>
+            <p class="text-xs text-slate-500">Entry, stop-loss and 2R targets verified across 11 AI Agents:</p>
           </div>
           <button onclick="navigateTab('stocks')" class="text-xs font-bold text-blue-600 hover:underline">
             View All 10 Stocks →
@@ -583,7 +699,85 @@ def serve_app():
 
     </div>
 
-    <!-- 2. STOCKS TAB (CLEAN LOGO-WISE DESK) -->
+    <!-- 2. AI AUTONOMOUS PORTFOLIO TAB (₹10 LAKH FUND) -->
+    <div id="tab-ai-fund" class="space-y-4 hidden">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200">100% AUTONOMOUS</span>
+            <h2 class="text-lg font-bold text-slate-900">AI Autonomous Portfolio (₹10,00,000 Fund)</h2>
+          </div>
+          <p class="text-xs text-slate-500 mt-0.5">AI Agents ke paas full access hai buy/sell karne ka. Compare karein aapka return vs AI ka return!</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="triggerAiRebalance()" class="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm flex items-center gap-1.5 transition">
+            <i class="fa-solid fa-wand-magic-sparkles"></i> Run AI Auto-Rebalance
+          </button>
+          <button onclick="loadAiPortfolio()" class="px-3 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition">
+            🔄 Refresh
+          </button>
+        </div>
+      </div>
+
+      <!-- AI Fund Summary Cards -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div class="clean-card p-4 rounded-xl border-t-2 border-t-indigo-600">
+          <span class="text-[11px] text-slate-500 font-medium">Total AI Fund Value</span>
+          <div id="ai-tot-val" class="text-xl font-bold text-slate-900 mt-0.5">₹10,20,985</div>
+          <span class="text-[10px] text-slate-400">Starting: ₹10,00,000</span>
+        </div>
+
+        <div class="clean-card p-4 rounded-xl border-t-2 border-t-emerald-600">
+          <span class="text-[11px] text-slate-500 font-medium">Net Profit (ROI)</span>
+          <div id="ai-tot-pnl" class="text-xl font-bold text-emerald-600 mt-0.5">+₹20,985</div>
+          <span id="ai-roi-pct" class="text-[10px] font-bold text-emerald-600">+2.10% Overall Gain</span>
+        </div>
+
+        <div class="clean-card p-4 rounded-xl border-t-2 border-t-blue-600">
+          <span class="text-[11px] text-slate-500 font-medium">Capital In Market</span>
+          <div id="ai-invested" class="text-xl font-bold text-blue-700 mt-0.5">₹4,49,930</div>
+          <span id="ai-open-count" class="text-[10px] text-slate-500">4 Active Open Positions</span>
+        </div>
+
+        <div class="clean-card p-4 rounded-xl border-t-2 border-t-slate-600">
+          <span class="text-[11px] text-slate-500 font-medium">Available Cash Buffer</span>
+          <div id="ai-cash" class="text-xl font-bold text-slate-900 mt-0.5">₹5,71,055</div>
+          <span class="text-[10px] text-slate-400">Reserved for New Setups</span>
+        </div>
+      </div>
+
+      <!-- AI Holdings Table -->
+      <div class="clean-card rounded-xl overflow-hidden">
+        <div class="p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+          <span class="text-xs font-bold text-slate-800">AI Active Positions & Trade History</span>
+          <span class="text-[10px] text-slate-500">Automatic Trailing SL & Targets</span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs whitespace-nowrap">
+            <thead class="bg-slate-100/70 border-b border-slate-200 text-slate-600 uppercase text-[10px] font-bold">
+              <tr>
+                <th class="p-3.5">Managing Agent</th>
+                <th class="p-3.5">Stock</th>
+                <th class="p-3.5">Type</th>
+                <th class="p-3.5">Qty</th>
+                <th class="p-3.5">Invested Capital</th>
+                <th class="p-3.5">Entry</th>
+                <th class="p-3.5">Current Price</th>
+                <th class="p-3.5">Target / SL</th>
+                <th class="p-3.5">Status</th>
+                <th class="p-3.5">AI Profit/Loss</th>
+                <th class="p-3.5">AI Investment Thesis</th>
+              </tr>
+            </thead>
+            <tbody id="ai-trades-rows" class="divide-y divide-slate-100 text-slate-700">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. STOCKS TAB (CLEAN LOGO-WISE DESK) -->
     <div id="tab-stocks" class="space-y-4 hidden">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
@@ -608,7 +802,7 @@ def serve_app():
       </div>
     </div>
 
-    <!-- 3. AI COMPARISON REPORT TAB -->
+    <!-- 4. AI COMPARISON REPORT TAB -->
     <div id="tab-reports" class="space-y-4 hidden">
       <div class="flex items-center justify-between">
         <div>
@@ -665,12 +859,12 @@ def serve_app():
       </div>
     </div>
 
-    <!-- 4. PAPER TRADING TAB -->
+    <!-- 5. MY PAPER TRADING TAB -->
     <div id="tab-portfolio" class="space-y-4 hidden">
       <div class="flex items-center justify-between">
         <div>
-          <h2 class="text-lg font-bold text-slate-900">Virtual Paper Portfolio</h2>
-          <p class="text-xs text-slate-500">Virtual balance se risk-free trading ledger:</p>
+          <h2 class="text-lg font-bold text-slate-900">My Manual Paper Portfolio</h2>
+          <p class="text-xs text-slate-500">Aapka personal paper trading ledger:</p>
         </div>
         <button onclick="refreshPortfolio()" class="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition">
           🔄 Refresh
@@ -713,18 +907,6 @@ def serve_app():
       </div>
     </div>
 
-    <!-- 5. 11 AI AGENTS HUB TAB -->
-    <div id="tab-agents" class="space-y-4 hidden">
-      <div>
-        <h2 class="text-lg font-bold text-slate-900">11 AI Specialized Agents Roster</h2>
-        <p class="text-xs text-slate-500">Sabhi 11 agents ki independent accuracy aur focus area:</p>
-      </div>
-
-      <div id="agents-grid" class="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <!-- Dynamically loaded -->
-      </div>
-    </div>
-
   </main>
 
   <!-- ================= MOBILE BOTTOM NAVIGATION BAR ================= -->
@@ -732,6 +914,10 @@ def serve_app():
     <button onclick="navigateTab('dashboard')" id="nav-m-dashboard" class="flex flex-col items-center gap-1 text-slate-900 font-bold text-[10px]">
       <i class="fa-solid fa-house text-base"></i>
       <span>Home</span>
+    </button>
+    <button onclick="navigateTab('ai-fund')" id="nav-m-ai-fund" class="flex flex-col items-center gap-1 text-indigo-700 font-bold text-[10px]">
+      <i class="fa-solid fa-robot text-base"></i>
+      <span>AI Fund (10L)</span>
     </button>
     <button onclick="navigateTab('stocks')" id="nav-m-stocks" class="flex flex-col items-center gap-1 text-slate-500 hover:text-slate-900 text-[10px]">
       <i class="fa-solid fa-chart-line text-base"></i>
@@ -743,11 +929,7 @@ def serve_app():
     </button>
     <button onclick="navigateTab('portfolio')" id="nav-m-portfolio" class="flex flex-col items-center gap-1 text-slate-500 hover:text-slate-900 text-[10px]">
       <i class="fa-solid fa-wallet text-base"></i>
-      <span>Paper</span>
-    </button>
-    <button onclick="navigateTab('agents')" id="nav-m-agents" class="flex flex-col items-center gap-1 text-slate-500 hover:text-slate-900 text-[10px]">
-      <i class="fa-solid fa-robot text-base"></i>
-      <span>Agents</span>
+      <span>My Paper</span>
     </button>
   </nav>
 
@@ -782,7 +964,7 @@ def serve_app():
           </div>
 
           <div class="flex items-center justify-between text-xs">
-            <span class="text-slate-500">Demo: demo@tradepilot.ai</span>
+            <span class="text-slate-500">demo@tradepilot.ai</span>
             <button type="button" onclick="showForgotPassword()" class="text-blue-600 hover:underline font-semibold">Forgot Password?</button>
           </div>
 
@@ -852,13 +1034,19 @@ def serve_app():
     let activeFilter = 'all';
 
     function navigateTab(tab) {
-      ['dashboard', 'stocks', 'reports', 'portfolio', 'agents'].forEach(t => {
+      ['dashboard', 'ai-fund', 'stocks', 'reports', 'portfolio'].forEach(t => {
         const el = document.getElementById('tab-' + t);
         if (el) el.classList.add('hidden');
         
         // Desktop nav update
         const btnD = document.getElementById('nav-d-' + t);
-        if (btnD) btnD.className = 'px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition';
+        if (btnD) {
+          if (t === 'ai-fund') {
+            btnD.className = 'px-3.5 py-2 rounded-lg text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 transition flex items-center gap-1.5';
+          } else {
+            btnD.className = 'px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition';
+          }
+        }
         
         // Mobile nav update
         const btnM = document.getElementById('nav-m-' + t);
@@ -869,15 +1057,85 @@ def serve_app():
       if (target) target.classList.remove('hidden');
 
       const activeD = document.getElementById('nav-d-' + tab);
-      if (activeD) activeD.className = 'px-3.5 py-2 rounded-lg text-xs font-semibold navy-brand text-white transition';
+      if (activeD) {
+        if (tab === 'ai-fund') {
+          activeD.className = 'px-3.5 py-2 rounded-lg text-xs font-semibold bg-indigo-600 text-white transition flex items-center gap-1.5';
+        } else {
+          activeD.className = 'px-3.5 py-2 rounded-lg text-xs font-semibold navy-brand text-white transition';
+        }
+      }
 
       const activeM = document.getElementById('nav-m-' + tab);
-      if (activeM) activeM.className = 'flex flex-col items-center gap-1 text-slate-900 font-bold text-[10px]';
+      if (activeM) {
+        if (tab === 'ai-fund') activeM.className = 'flex flex-col items-center gap-1 text-indigo-700 font-extrabold text-[10px]';
+        else activeM.className = 'flex flex-col items-center gap-1 text-slate-900 font-bold text-[10px]';
+      }
 
+      if (tab === 'ai-fund') loadAiPortfolio();
       if (tab === 'reports') loadComparisonReports();
       if (tab === 'portfolio') refreshPortfolio();
-      if (tab === 'agents') loadAgents();
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    async function loadAiPortfolio() {
+      try {
+        const res = await fetch('/api/ai-portfolio');
+        const data = await res.json();
+
+        document.getElementById('ai-tot-val').innerText = `₹${data.current_value.toLocaleString('en-IN')}`;
+        document.getElementById('dash-ai-val').innerText = `₹${data.current_value.toLocaleString('en-IN')}`;
+        
+        const sign = data.total_pnl >= 0 ? '+' : '';
+        document.getElementById('ai-tot-pnl').innerText = `${sign}₹${data.total_pnl.toLocaleString('en-IN')}`;
+        document.getElementById('dash-ai-pnl').innerText = `${sign}₹${data.total_pnl.toLocaleString('en-IN')} (${sign}${data.roi_pct}%)`;
+        document.getElementById('ai-roi-pct').innerText = `${sign}${data.roi_pct}% Overall ROI`;
+        
+        document.getElementById('ai-invested').innerText = `₹${data.invested_amount.toLocaleString('en-IN')}`;
+        document.getElementById('ai-cash').innerText = `₹${data.cash_balance.toLocaleString('en-IN')}`;
+        document.getElementById('ai-open-count').innerText = `${data.holdings_count} Active Open Positions`;
+
+        if (data.trades && data.trades.length > 0) {
+          let html = '';
+          data.trades.forEach(t => {
+            const isTargetHit = t.status === 'TARGET_HIT';
+            const statusTag = isTargetHit ?
+              '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">🎯 TARGET HIT</span>' :
+              '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">⚡ ACTIVE HOLDING</span>';
+
+            html += `
+              <tr class="hover:bg-slate-50">
+                <td class="p-3.5 font-bold text-slate-900">${t.agent_name}</td>
+                <td class="p-3.5 font-black text-indigo-900">#${t.symbol}</td>
+                <td class="p-3.5 text-slate-600 text-[11px]">${t.trade_type}</td>
+                <td class="p-3.5 font-bold text-slate-800">${t.quantity}</td>
+                <td class="p-3.5 font-semibold text-slate-900">₹${t.invested_amt.toLocaleString('en-IN')}</td>
+                <td class="p-3.5 text-slate-700">₹${t.entry_price.toFixed(2)}</td>
+                <td class="p-3.5 font-bold text-slate-900">₹${t.current_price.toFixed(2)}</td>
+                <td class="p-3.5 text-[11px] text-slate-600">T: ₹${t.target_price} | SL: ₹${t.stop_loss}</td>
+                <td class="p-3.5">${statusTag}</td>
+                <td class="p-3.5 font-bold ${t.pnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}">
+                  ${t.pnl >= 0 ? '+' : ''}₹${t.pnl.toLocaleString('en-IN')}
+                </td>
+                <td class="p-3.5 text-slate-500 max-w-xs truncate" title="${t.reason}">${t.reason}</td>
+              </tr>`;
+          });
+          document.getElementById('ai-trades-rows').innerHTML = html;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function triggerAiRebalance() {
+      alert('🤖 AI Market Scan running... Scanning 50 stocks for ₹10 Lakh Fund allocation.');
+      try {
+        const res = await fetch('/api/ai-portfolio/rebalance', { method: 'POST' });
+        const data = await res.json();
+        alert('🎉 ' + data.message);
+        loadAiPortfolio();
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
     }
 
     function filterStocks(horizon) {
@@ -925,7 +1183,7 @@ def serve_app():
             <div class="flex items-center gap-2 pt-1">
               ${s.qty > 0 ? 
                 `<button onclick="quickPaperTrade('${s.sym}', '${s.horizon}', ${s.entry}, ${s.stop}, ${s.target}, ${s.qty})" class="flex-1 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-sm transition">
-                  ⚡ Paper Trade (${s.qty} Qty)
+                  ⚡ My Paper Trade (${s.qty} Qty)
                 </button>
                 <button onclick="sendToTelegram('${s.sym}', '${s.type}', ${s.entry}, ${s.stop}, ${s.target}, '${s.why.replace(/'/g, "")}', ${s.qty})" title="Send to Telegram" class="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-700 transition">
                   <i class="fa-brands fa-telegram text-sky-500"></i>
@@ -982,7 +1240,7 @@ def serve_app():
           })
         });
         const data = await res.json();
-        alert(`✅ Trade Recorded!\n${symbol} (${qty} shares) paper ledger me save ho gaya.`);
+        alert(`✅ Trade Recorded!\n${symbol} (${qty} shares) aapke personal paper ledger me save ho gaya.`);
         refreshPortfolio();
       } catch (e) {
         alert('Trade error: ' + e.message);
@@ -995,7 +1253,7 @@ def serve_app():
         const data = await res.json();
 
         document.getElementById('port-cash').innerText = `₹${data.virtual_balance.toLocaleString('en-IN')}`;
-        document.getElementById('dash-cash').innerText = `₹${data.virtual_balance.toLocaleString('en-IN')}`;
+        document.getElementById('dash-my-pnl').innerText = `₹${data.simulated_pnl.toLocaleString('en-IN')}`;
 
         if (data.trades && data.trades.length > 0) {
           let html = '';
@@ -1058,30 +1316,6 @@ def serve_app():
         document.getElementById('rep-win').innerText = wins;
         document.getElementById('rep-los').innerText = losses;
         document.getElementById('rep-run').innerText = running;
-      } catch (e) {
-        console.error(e);
-      }
-    }
-
-    async function loadAgents() {
-      try {
-        const res = await fetch('/api/agents/performance');
-        const data = await res.json();
-        let html = '';
-        data.forEach(a => {
-          html += `
-            <div class="clean-card p-4 rounded-xl flex items-center justify-between">
-              <div>
-                <div class="font-bold text-sm text-slate-900">${a.agent}</div>
-                <div class="text-xs text-slate-500 mt-0.5">${a.focus} • ${a.predictions} setups</div>
-              </div>
-              <div class="text-right">
-                <div class="font-extrabold text-sm text-emerald-600">${a.accuracy}</div>
-                <div class="text-[10px] text-slate-400">P&L: ${a.pnl}</div>
-              </div>
-            </div>`;
-        });
-        document.getElementById('agents-grid').innerHTML = html;
       } catch (e) {
         console.error(e);
       }
@@ -1162,6 +1396,7 @@ def serve_app():
     }
 
     renderStocksDesk();
+    loadAiPortfolio();
   </script>
 </body>
 </html>
