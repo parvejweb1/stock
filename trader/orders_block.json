@@ -1,0 +1,33 @@
+﻿{
+  "orders": [
+    {
+      "symbol": "SBIN",
+      "exchange": "NSE",
+      "segment": "CASH",
+      "product": "MIS",
+      "transaction_type": "BUY",
+      "order_type": "LIMIT",
+      "quantity": 5,
+      "price": 820.0,
+      "validity": "DAY",
+      "stop_loss": 812.0,
+      "target": 836.0,
+      "trade_type": "intraday",
+      "upper_circuit": 820.0
+    },
+    {
+      "symbol": "RELIANCE",
+      "exchange": "NSE",
+      "segment": "CASH",
+      "product": "CNC",
+      "transaction_type": "SELL",
+      "order_type": "LIMIT",
+      "quantity": 1,
+      "price": 1340.0,
+      "validity": "DAY",
+      "stop_loss": 1360.0,
+      "target": 1300.0,
+      "trade_type": "swing"
+    }
+  ]
+}

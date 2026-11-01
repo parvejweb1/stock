@@ -1,0 +1,26 @@
+{
+  "created_by": "trader-entry",
+  "symbol": "SBIN",
+  "yahoo": "SBIN.NS",
+  "trade_type": "intraday",
+  "product": "MIS",
+  "setup": "orb",
+  "side": "buy",
+  "date": "2026-10-29",
+  "status": "triggered",
+  "time": "10:10 AM",
+  "bar_start": "10:05",
+  "bar_index": 10,
+  "price": 961.65,
+  "level": 961.5,
+  "interval": "5m",
+  "opening_range": {
+    "high": 961.5,
+    "low": 955.0,
+    "minutes": 15
+  },
+  "source": "yahoo",
+  "checked_at": "2026-10-29T05:00:00Z",
+  "now_ist": "2026-10-29 10:30:00",
+  "reason": "the 10:05 bar closed above the range high"
+}

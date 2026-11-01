@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.env
+trader/cache/
+trader/state/news.json
+trader/state/deals.json
+trader/state/sent_alerts.json
+tmp/

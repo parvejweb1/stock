@@ -1,0 +1,11 @@
+{
+  "source": "NSE Nifty 50 Index top 5 constituents by weight, renormalised to 100",
+  "as_of": "2026-10-30",
+  "weights": [
+    {"ticker": "HDFCBANK", "name": "HDFC Bank", "weight": 28.50, "pct_of_index": 11.90},
+    {"ticker": "RELIANCE", "name": "Reliance Industries", "weight": 22.10, "pct_of_index": 9.23},
+    {"ticker": "ICICIBANK", "name": "ICICI Bank", "weight": 19.40, "pct_of_index": 8.10},
+    {"ticker": "INFY", "name": "Infosys", "weight": 15.80, "pct_of_index": 6.60},
+    {"ticker": "TCS", "name": "Tata Consultancy Services", "weight": 14.20, "pct_of_index": 5.93}
+  ]
+}

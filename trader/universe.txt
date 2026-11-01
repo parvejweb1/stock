@@ -1,0 +1,50 @@
+ADANIENT|Adani Enterprises Ltd.
+ADANIPORTS|Adani Ports and Special Economic Zone Ltd.
+APOLLOHOSP|Apollo Hospitals Enterprise Ltd.
+ASIANPAINT|Asian Paints Ltd.
+AXISBANK|Axis Bank Ltd.
+BAJAJ-AUTO|Bajaj Auto Ltd.
+BAJAJFINSV|Bajaj Finserv Ltd.
+BAJFINANCE|Bajaj Finance Ltd.
+BEL|Bharat Electronics Ltd.
+BHARTIARTL|Bharti Airtel Ltd.
+BSE|BSE Ltd.
+CIPLA|Cipla Ltd.
+COALINDIA|Coal India Ltd.
+DRREDDY|Dr. Reddy's Laboratories Ltd.
+EICHERMOT|Eicher Motors Ltd.
+ETERNAL|Eternal Ltd.
+GRASIM|Grasim Industries Ltd.
+HCLTECH|HCL Technologies Ltd.
+HDFCBANK|HDFC Bank Ltd.
+HDFCLIFE|HDFC Life Insurance Company Ltd.
+HINDALCO|Hindalco Industries Ltd.
+HINDUNILVR|Hindustan Unilever Ltd.
+ICICIBANK|ICICI Bank Ltd.
+INDIGO|InterGlobe Aviation Ltd.
+INFY|Infosys Ltd.
+ITC|ITC Ltd.
+JIOFIN|Jio Financial Services Ltd.
+JSWSTEEL|JSW Steel Ltd.
+KOTAKBANK|Kotak Mahindra Bank Ltd.
+LT|Larsen & Toubro Ltd.
+M&M|Mahindra & Mahindra Ltd.
+MARUTI|Maruti Suzuki India Ltd.
+MAXHEALTH|Max Healthcare Institute Ltd.
+NESTLEIND|Nestle India Ltd.
+NTPC|NTPC Ltd.
+ONGC|Oil & Natural Gas Corporation Ltd.
+POWERGRID|Power Grid Corporation of India Ltd.
+RELIANCE|Reliance Industries Ltd.
+SBILIFE|SBI Life Insurance Company Ltd.
+SBIN|State Bank of India
+SHRIRAMFIN|Shriram Finance Ltd.
+SUNPHARMA|Sun Pharmaceutical Industries Ltd.
+TATACONSUM|Tata Consumer Products Ltd.
+TATASTEEL|Tata Steel Ltd.
+TCS|Tata Consultancy Services Ltd.
+TECHM|Tech Mahindra Ltd.
+TITAN|Titan Company Ltd.
+TMPV|Tata Motors Passenger Vehicles Ltd.
+TRENT|Trent Ltd.
+ULTRACEMCO|UltraTech Cement Ltd.

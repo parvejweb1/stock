@@ -1,0 +1,19 @@
+﻿{
+  "orders": [
+    {
+      "symbol": "NIFTY26NOV24500CE",
+      "exchange": "NFO",
+      "segment": "FNO",
+      "product": "NRML",
+      "transaction_type": "BUY",
+      "order_type": "LIMIT",
+      "quantity": 75,
+      "price": 120.0,
+      "validity": "DAY",
+      "stop_loss": 100.0,
+      "target": 160.0,
+      "trade_type": "intraday",
+      "lot_size": 75
+    }
+  ]
+}

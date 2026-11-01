@@ -1,0 +1,10 @@
+{
+  "rules": [
+    {"id": "pre-open", "type": "pre_open"},
+    {"id": "opening-bell", "type": "opening_bell"},
+    {"id": "reliance-plan-stop", "symbol": "RELIANCE", "type": "stop", "price": 1152.5, "note": "plan stop: opening-range midpoint", "date": "2026-10-30"},
+    {"id": "reliance-plan-target", "symbol": "RELIANCE", "type": "target", "price": 1185.0, "note": "plan target: 2R (two times the risk)", "date": "2026-10-30"},
+    {"id": "reliance-flat-by", "symbol": "RELIANCE", "type": "time", "at": "15:10", "label": "flat by close", "date": "2026-10-30"},
+    {"id": "tcs-move-3", "symbol": "TCS", "type": "pct_move", "pct": 3}
+  ]
+}

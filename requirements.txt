@@ -1,0 +1,11 @@
+fastapi>=0.110.0
+uvicorn>=0.28.0
+pydantic>=2.0.0
+requests>=2.31.0
+growwapi>=0.0.9
+kiteconnect>=4.2.0
+upstox-python-sdk>=2.0.0
+smartapi-python>=1.4.0
+pyotp>=2.9.0
+logzero>=1.7.0
+websocket-client>=1.7.0
