@@ -1,7 +1,9 @@
 import os
 import sys
 import json
+import random
 import sqlite3
+import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
@@ -22,7 +24,44 @@ app.add_middleware(
 
 WORKSPACE_DIR = Path(__file__).resolve().parent
 DB_PATH = WORKSPACE_DIR / "trader" / "tradepilot.db"
+CONFIG_PATH = WORKSPACE_DIR / "trader" / "config.json"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+# In-memory OTP storage for forgot password
+OTP_STORAGE = {}
+
+# ----------------- TELEGRAM HELPER -----------------
+def send_telegram_msg(html_text: str) -> bool:
+    bot_token = None
+    chat_id = None
+    if CONFIG_PATH.exists():
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+                bot_token = cfg.get("telegram_bot_token")
+                chat_id = cfg.get("telegram_chat_id")
+        except Exception:
+            pass
+
+    if not bot_token:
+        bot_token = "9291565347:AAE9iI_U4se2gCZ0AzidonLwNalnFznkLBU"
+    if not chat_id:
+        chat_id = "5706014125"
+
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": html_text,
+        "parse_mode": "HTML"
+    }
+    try:
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            return resp.status == 200
+    except Exception as e:
+        print(f"[Telegram Dispatch Error]: {e}")
+        return False
 
 # ----------------- SQLITE DATABASE INITIALIZATION -----------------
 def get_db():
@@ -96,7 +135,7 @@ def init_db():
         cursor.execute("INSERT INTO users (email, password, name, created_at) VALUES ('demo@tradepilot.ai', 'pilot123', 'Ashok Kumar', ?)", (datetime.now().isoformat(),))
         cursor.execute("INSERT INTO preferences (user_id, interests, risk_profile, updated_at) VALUES (1, '[\"Swing Trading\", \"Long-Term Investment\"]', 'Moderate', ?)", (datetime.now().isoformat(),))
     
-    # Seed historical verified predictions for all agents to enable comparison
+    # Seed historical verified predictions for all 11 agents
     cursor.execute("SELECT count(*) as cnt FROM agent_predictions")
     if cursor.fetchone()["cnt"] == 0:
         sample_reports = [
@@ -128,6 +167,14 @@ class LoginRequest(BaseModel):
     email: str
     password: str
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+    otp: str
+    new_password: str
+
 class PreferenceRequest(BaseModel):
     user_id: int
     interests: List[str]
@@ -153,6 +200,46 @@ def login(req: LoginRequest):
     if user:
         return {"status": "success", "user": {"id": user["id"], "email": user["email"], "name": user["name"]}}
     raise HTTPException(status_code=401, detail="Invalid credentials. Use demo@tradepilot.ai / pilot123")
+
+@app.post("/api/auth/send-otp")
+def send_otp(req: ForgotPasswordRequest):
+    otp = str(random.randint(100000, 999999))
+    OTP_STORAGE[req.email] = {
+        "otp": otp,
+        "expires_at": datetime.now() + timedelta(minutes=10)
+    }
+
+    tg_text = (
+        f"🔐 <b>TradePilot AI Security Alert</b>\n\n"
+        f"<b>Password Reset Request</b> for account: <code>{req.email}</code>\n"
+        f"Your One-Time Password (OTP) is:\n\n"
+        f"🔑 <b><code>{otp}</code></b>\n\n"
+        f"<i>This OTP is valid for 10 minutes. Do not share this with anyone.</i>"
+    )
+    sent = send_telegram_msg(tg_text)
+    return {"status": "success", "message": "OTP aapke Telegram account par bhej diya gaya hai!", "telegram_dispatched": sent}
+
+@app.post("/api/auth/reset-password")
+def reset_password(req: ResetPasswordRequest):
+    record = OTP_STORAGE.get(req.email)
+    if not record or record["otp"] != req.otp.strip():
+        raise HTTPException(status_code=400, detail="Galat OTP ya expire ho gaya hai! Kripya dobara try karein.")
+    if datetime.now() > record["expires_at"]:
+        raise HTTPException(status_code=400, detail="OTP expire ho chuka hai. Kripya naya OTP request karein.")
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET password = ? WHERE email = ?", (req.new_password, req.email))
+    conn.commit()
+    conn.close()
+
+    del OTP_STORAGE[req.email]
+    
+    send_telegram_msg(
+        f"✅ <b>Password Changed Successfully</b>\n"
+        f"TradePilot AI account (<code>{req.email}</code>) ka password update ho gaya hai."
+    )
+    return {"status": "success", "message": "Password successfully update ho gaya! Ab naye password se login karein."}
 
 @app.get("/api/user/{user_id}/preferences")
 def get_preferences(user_id: int):
@@ -217,6 +304,31 @@ def get_reports_comparison():
     conn.close()
     return [dict(r) for r in rows]
 
+@app.post("/api/telegram/broadcast-stock")
+def broadcast_stock_to_telegram(data: dict):
+    sym = data.get("symbol")
+    horizon = data.get("horizon", "Swing Trading")
+    entry = data.get("entry")
+    stop = data.get("stop")
+    target = data.get("target")
+    reason = data.get("reason", "Multi-Agent Consensus verified")
+    qty = data.get("qty", 1)
+
+    tg_msg = (
+        f"🎯 <b>TradePilot AI • New Stock Recommendation</b>\n\n"
+        f"📌 <b>Stock:</b> <b>#{sym}</b> (NSE)\n"
+        f"⏱ <b>Investment Horizon:</b> <code>{horizon}</code>\n"
+        f"🚦 <b>Action:</b> <b>STRONG BUY</b>\n\n"
+        f"💵 <b>Kharido Price (Entry):</b> ₹{entry}\n"
+        f"🛑 <b>Stop Loss (Safe Exit):</b> ₹{stop}\n"
+        f"🎯 <b>Target (Munafa):</b> ₹{target} (2R Return)\n"
+        f"📦 <b>Suggested Safe Qty:</b> {qty} shares\n\n"
+        f"💡 <b>AI Analysis:</b> {reason}\n\n"
+        f"🛡️ <i>Risk Shield Active: Capital strictly protected (Max ₹20 loss limit). Paper trade available on dashboard!</i>"
+    )
+    success = send_telegram_msg(tg_msg)
+    return {"status": "success", "message": f"{sym} alert broadcasted to Telegram!", "dispatched": success}
+
 @app.get("/api/paper/portfolio/{user_id}")
 def get_paper_portfolio(user_id: int):
     conn = get_db()
@@ -244,13 +356,20 @@ def execute_paper_trade(req: TradeOrderRequest):
     conn = get_db()
     cursor = conn.cursor()
     now_ts = datetime.now().strftime("%Y-%m-%d %H:%M")
-    charges = 20.0 # simulated flat brokerage
+    charges = 20.0
     cursor.execute("""
     INSERT INTO paper_trades (user_id, symbol, trade_type, side, entry_price, current_price, stop_loss, target_price, quantity, status, pnl, charges, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', 0.0, ?, ?)
     """, (req.user_id, req.symbol, req.trade_type, req.side, req.entry_price, req.entry_price, req.stop_loss, req.target_price, req.quantity, charges, now_ts))
     conn.commit()
     conn.close()
+
+    # Also notify telegram about user paper trade execution
+    send_telegram_msg(
+        f"⚡ <b>Paper Trade Executed</b>\n"
+        f"Stock: <b>#{req.symbol}</b> ({req.quantity} Shares)\n"
+        f"Type: {req.trade_type} | Entry: ₹{req.entry_price} | Target: ₹{req.target_price} | SL: ₹{req.stop_loss}"
+    )
     return {"status": "success", "message": f"Virtual trade executed for {req.symbol} ({req.quantity} shares)"}
 
 # ----------------- FULL HTML CLIENT INTERFACE (Next-Gen UI) -----------------
@@ -272,15 +391,16 @@ def serve_app():
     .glass-card:hover { border-color: rgba(99, 102, 241, 0.3); }
     .btn-gradient { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); }
     .btn-gradient:hover { background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%); }
+    .stock-badge-logo { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 15px; }
   </style>
 </head>
 <body class="min-h-screen flex">
 
-  <!-- ================= AUTH & ONBOARDING OVERLAY ================= -->
+  <!-- ================= AUTH, FORGOT PASS & ONBOARDING OVERLAY ================= -->
   <div id="auth-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md hidden">
     <div class="glass-card max-w-md w-full p-8 rounded-3xl shadow-2xl relative border border-slate-700/60">
       
-      <!-- Login View -->
+      <!-- 1. LOGIN VIEW -->
       <div id="view-login" class="space-y-5">
         <div class="text-center space-y-2">
           <div class="w-14 h-14 rounded-2xl bg-blue-600/20 text-blue-400 mx-auto flex items-center justify-center text-2xl font-black border border-blue-500/30">
@@ -306,7 +426,7 @@ def serve_app():
               <input type="checkbox" checked class="w-3.5 h-3.5 rounded text-blue-600" />
               <span>Remember Me</span>
             </label>
-            <a href="#" class="text-blue-400 hover:underline">Forgot Password?</a>
+            <button type="button" onclick="showForgotPassword()" class="text-blue-400 hover:underline">Forgot Password?</button>
           </div>
 
           <button type="submit" class="w-full btn-gradient py-3 rounded-xl font-bold text-sm text-white shadow-lg transition">
@@ -319,7 +439,48 @@ def serve_app():
         </div>
       </div>
 
-      <!-- Strategy Onboarding View -->
+      <!-- 2. FORGOT PASSWORD & TELEGRAM OTP VIEW -->
+      <div id="view-forgot" class="space-y-5 hidden">
+        <div>
+          <button onclick="backToLogin()" class="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 mb-2">
+            <i class="fa-solid fa-arrow-left"></i> Back to Login
+          </button>
+          <div class="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xl mb-3 border border-emerald-500/30">
+            <i class="fa-brands fa-telegram"></i>
+          </div>
+          <h2 class="text-xl font-black text-white">Reset Password via Telegram OTP</h2>
+          <p class="text-xs text-slate-400 mt-1">Aapke Telegram bot (@Mine_upcoming_bot) par secret 6-digit OTP aayega.</p>
+        </div>
+
+        <div id="step-send-otp" class="space-y-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Registered Email ID</label>
+            <input type="email" id="forgot-email" value="demo@tradepilot.ai" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500" />
+          </div>
+          <button onclick="sendTelegramOTP()" id="btn-request-otp" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs shadow-lg transition flex items-center justify-center gap-2">
+            <i class="fa-solid fa-paper-plane"></i> Send OTP to Telegram Phone
+          </button>
+        </div>
+
+        <div id="step-verify-otp" class="space-y-4 hidden">
+          <div class="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-300 flex items-center gap-2">
+            <i class="fa-solid fa-circle-check"></i> OTP has been dispatched to your Telegram!
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Enter 6-Digit Telegram OTP</label>
+            <input type="text" id="reset-otp" placeholder="e.g. 849301" maxlength="6" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs font-mono tracking-widest text-center text-emerald-400 text-base focus:outline-none focus:border-emerald-500" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">New Password</label>
+            <input type="password" id="reset-new-pass" placeholder="Enter new strong password" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500" />
+          </div>
+          <button onclick="submitPasswordReset()" class="w-full btn-gradient py-3 rounded-xl font-bold text-xs text-white shadow-lg transition">
+            Verify OTP & Save New Password →
+          </button>
+        </div>
+      </div>
+
+      <!-- 3. STRATEGY ONBOARDING VIEW -->
       <div id="view-onboarding" class="space-y-5 hidden">
         <div>
           <span class="text-xs font-bold text-blue-400 uppercase tracking-wider">Step 2 of 2</span>
@@ -404,7 +565,7 @@ def serve_app():
           <i class="fa-solid fa-grid-2 text-sm w-4"></i> Dashboard
         </button>
         <button onclick="navigatePage('suggestions')" id="nav-suggestions" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800/60 transition">
-          <i class="fa-solid fa-bullseye text-sm w-4"></i> Stock Suggestions
+          <i class="fa-solid fa-bullseye text-sm w-4"></i> Stock Suggestions (Logo)
         </button>
         <button onclick="navigatePage('reports')" id="nav-reports" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800/60 transition">
           <i class="fa-solid fa-clipboard-check text-sm w-4 text-emerald-400"></i> AI Comparison Report
@@ -550,7 +711,7 @@ def serve_app():
               <p class="text-xs text-slate-400">Verified by Technical breakout, Screener financials and Risk shield:</p>
             </div>
             <button onclick="navigatePage('suggestions')" class="text-xs font-bold text-blue-400 hover:text-blue-300">
-              View All 10 Suggestions →
+              View All 10 Suggestions (Logo-Style) →
             </button>
           </div>
 
@@ -559,9 +720,12 @@ def serve_app():
             <!-- POWERGRID Card -->
             <div class="p-5 rounded-2xl bg-slate-900/80 border border-emerald-500/30 space-y-3">
               <div class="flex items-center justify-between">
-                <div>
-                  <span class="font-black text-base text-white">#POWERGRID</span>
-                  <div class="text-[11px] text-slate-400">Power Transmission PSU</div>
+                <div class="flex items-center gap-3">
+                  <div class="stock-badge-logo bg-amber-500/20 text-amber-400 border border-amber-500/30">⚡</div>
+                  <div>
+                    <span class="font-black text-base text-white">POWERGRID</span>
+                    <div class="text-[11px] text-slate-400">Power Transmission PSU</div>
+                  </div>
                 </div>
                 <span class="text-xs font-black px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                   BUY (Swing 20D)
@@ -572,17 +736,25 @@ def serve_app():
                 <div class="flex justify-between"><span>Stop-Loss:</span> <b class="text-rose-400">₹255.00</b></div>
                 <div class="flex justify-between"><span>Target:</span> <b class="text-emerald-400">₹285.00 (2R Gain)</b></div>
               </div>
-              <button onclick="quickPaperTrade('POWERGRID', 'swing', 265, 255, 285, 3)" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-extrabold shadow transition">
-                ⚡ Execute Paper Trade (3 Shares)
-              </button>
+              <div class="flex items-center gap-2 pt-1">
+                <button onclick="quickPaperTrade('POWERGRID', 'swing', 265, 255, 285, 3)" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-extrabold shadow transition">
+                  ⚡ Paper Trade (3 Qty)
+                </button>
+                <button onclick="sendStockToTelegram('POWERGRID', 'Swing Trading', 265, 255, 285, '20-Day High Breakout on Maharatna PSU', 3)" title="Send to Telegram" class="px-3 py-2 bg-slate-800 hover:bg-emerald-600/30 hover:text-emerald-400 text-slate-300 rounded-xl text-xs font-bold border border-slate-700 transition">
+                  <i class="fa-brands fa-telegram"></i>
+                </button>
+              </div>
             </div>
 
             <!-- INFY Card -->
             <div class="p-5 rounded-2xl bg-slate-900/80 border border-emerald-500/30 space-y-3">
               <div class="flex items-center justify-between">
-                <div>
-                  <span class="font-black text-base text-white">#INFY</span>
-                  <div class="text-[11px] text-slate-400">Infosys IT Services</div>
+                <div class="flex items-center gap-3">
+                  <div class="stock-badge-logo bg-blue-500/20 text-blue-400 border border-blue-500/30">INF</div>
+                  <div>
+                    <span class="font-black text-base text-white">INFY</span>
+                    <div class="text-[11px] text-slate-400">Infosys IT Services</div>
+                  </div>
                 </div>
                 <span class="text-xs font-black px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                   BUY (IT Surge)
@@ -593,17 +765,25 @@ def serve_app():
                 <div class="flex justify-between"><span>Stop-Loss:</span> <b class="text-rose-400">₹1,160.00</b></div>
                 <div class="flex justify-between"><span>Target:</span> <b class="text-emerald-400">₹1,235.00</b></div>
               </div>
-              <button onclick="quickPaperTrade('INFY', 'swing', 1185, 1160, 1235, 1)" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-extrabold shadow transition">
-                ⚡ Execute Paper Trade (1 Share)
-              </button>
+              <div class="flex items-center gap-2 pt-1">
+                <button onclick="quickPaperTrade('INFY', 'swing', 1185, 1160, 1235, 1)" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-extrabold shadow transition">
+                  ⚡ Paper Trade (1 Qty)
+                </button>
+                <button onclick="sendStockToTelegram('INFY', 'Swing Trading', 1185, 1160, 1235, 'IT Sector Surge & Multi-million AI order wins', 1)" title="Send to Telegram" class="px-3 py-2 bg-slate-800 hover:bg-emerald-600/30 hover:text-emerald-400 text-slate-300 rounded-xl text-xs font-bold border border-slate-700 transition">
+                  <i class="fa-brands fa-telegram"></i>
+                </button>
+              </div>
             </div>
 
             <!-- RELIANCE Card -->
             <div class="p-5 rounded-2xl bg-slate-900/80 border border-blue-500/30 space-y-3">
               <div class="flex items-center justify-between">
-                <div>
-                  <span class="font-black text-base text-white">#RELIANCE</span>
-                  <div class="text-[11px] text-slate-400">Jio, Retail & Oil</div>
+                <div class="flex items-center gap-3">
+                  <div class="stock-badge-logo bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">REL</div>
+                  <div>
+                    <span class="font-black text-base text-white">RELIANCE</span>
+                    <div class="text-[11px] text-slate-400">Jio, Retail & Oil</div>
+                  </div>
                 </div>
                 <span class="text-xs font-black px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
                   ACCUMULATE (Long)
@@ -614,9 +794,14 @@ def serve_app():
                 <div class="flex justify-between"><span>Stop-Loss:</span> <b class="text-slate-400">Optional (Long Term)</b></div>
                 <div class="flex justify-between"><span>Target:</span> <b class="text-emerald-400">Multi-Year Compounding</b></div>
               </div>
-              <button onclick="quickPaperTrade('RELIANCE', 'longterm', 1164, 1120, 1300, 1)" class="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-extrabold shadow transition">
-                ⚡ Execute Paper Accumulate
-              </button>
+              <div class="flex items-center gap-2 pt-1">
+                <button onclick="quickPaperTrade('RELIANCE', 'longterm', 1164, 1120, 1300, 1)" class="flex-1 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-extrabold shadow transition">
+                  ⚡ Accumulate Paper
+                </button>
+                <button onclick="sendStockToTelegram('RELIANCE', 'Long-Term Investment', 1164, 1120, 1300, 'Promoters stake increase & Jio Retail Cashflow', 1)" title="Send to Telegram" class="px-3 py-2 bg-slate-800 hover:bg-emerald-600/30 hover:text-emerald-400 text-slate-300 rounded-xl text-xs font-bold border border-slate-700 transition">
+                  <i class="fa-brands fa-telegram"></i>
+                </button>
+              </div>
             </div>
 
           </div>
@@ -624,22 +809,38 @@ def serve_app():
 
       </div>
 
-      <!-- PAGE 2: STOCK SUGGESTIONS (FULL 10 STOCKS) -->
+      <!-- PAGE 2: STOCK SUGGESTIONS (FULL 10 STOCKS WITH MODERN LOGOS) -->
       <div id="page-suggestions" class="space-y-6 hidden">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h2 class="text-2xl font-black text-white">Full Stock Suggestion Desk</h2>
-            <p class="text-xs text-slate-400">Filtered with exact Entry, Stop-loss, 2R Target and Safe Quantity.</p>
+            <div class="flex items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-500/20 text-blue-400 border border-blue-500/30">LOGO-POWERED DESK</span>
+              <h2 class="text-2xl font-black text-white">Full Stock Suggestion Desk</h2>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Har stock ka logo, Entry/Stop/Target aur Telegram par direct dispatch karne ka feature.</p>
           </div>
-          <button onclick="navigatePage('dashboard')" class="text-xs text-blue-400 hover:underline">← Back to Dashboard</button>
+          <div class="flex items-center gap-3">
+            <button onclick="broadcastAllSuggestionsToTelegram()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-extrabold transition shadow flex items-center gap-2">
+              <i class="fa-brands fa-telegram"></i> Broadcast All to Telegram
+            </button>
+            <button onclick="navigatePage('dashboard')" class="text-xs text-blue-400 hover:underline">← Back to Dashboard</button>
+          </div>
+        </div>
+
+        <!-- Strategy Filter Chips -->
+        <div class="flex items-center gap-2 overflow-x-auto pb-1">
+          <button onclick="filterLogoGrid('all')" id="btn-filt-all" class="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white transition">All Stocks (10)</button>
+          <button onclick="filterLogoGrid('Long-Term')" id="btn-filt-long" class="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 hover:text-white transition">Long-Term</button>
+          <button onclick="filterLogoGrid('Swing')" id="btn-filt-swing" class="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 hover:text-white transition">Swing Trading</button>
+          <button onclick="filterLogoGrid('Intraday')" id="btn-filt-intra" class="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 hover:text-white transition">Intraday (ORB)</button>
         </div>
 
         <div id="full-suggestions-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <!-- Loaded dynamically via script -->
+          <!-- Loaded dynamically via script with logos -->
         </div>
       </div>
 
-      <!-- PAGE 3: AI PREDICTIONS & REAL-MARKET COMPARISON REPORT (NEW) -->
+      <!-- PAGE 3: AI PREDICTIONS & REAL-MARKET COMPARISON REPORT -->
       <div id="page-reports" class="space-y-6 hidden">
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
@@ -767,7 +968,6 @@ def serve_app():
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <!-- 11 Agents will be loaded here -->
           <div class="col-span-1 md:col-span-2 glass-card p-5 rounded-3xl space-y-4">
             <h3 class="text-sm font-bold text-white flex items-center justify-between">
               <span>Complete 11-Agent Intelligence Grid</span>
@@ -849,17 +1049,19 @@ def serve_app():
 
   <script>
     const STOCKS_DATA = [
-      { sym: 'POWERGRID', type: 'Swing (20D)', entry: 265, stop: 255, target: 285, qty: 3, why: '20-Day High Breakout on Maharatna PSU.' },
-      { sym: 'INFY', type: 'Swing (CNC)', entry: 1185, stop: 1160, target: 1235, qty: 1, why: 'IT Sector Surge & Multi-million AI order wins.' },
-      { sym: 'RELIANCE', type: 'Long Term', entry: 1164, stop: 1120, target: 1300, qty: 1, why: 'Promoters stake increase & Jio Retail Cashflow.' },
-      { sym: 'SBIN', type: 'Swing (CNC)', entry: 820, stop: 805, target: 850, qty: 1, why: 'Lowest bad loans (NPA 0.57%) in 10 years.' },
-      { sym: 'TCS', type: 'Swing (CNC)', entry: 2502, stop: 2460, target: 2580, qty: 1, why: 'Bull Flag Continuation Pattern.' },
-      { sym: 'HCLTECH', type: 'Intraday (ORB)', entry: 1428, stop: 1390, target: 1495, qty: 1, why: 'RSI 69 Breakout & Solid Dividend Yield.' },
-      { sym: 'NTPC', type: 'Swing (CNC)', entry: 316, stop: 305, target: 338, qty: 3, why: 'Green energy transition & Solar expansion.' },
-      { sym: 'KOTAKBANK', type: 'Swing (CNC)', entry: 461, stop: 445, target: 490, qty: 2, why: 'Digital customer acquisition post-RBI relief.' },
-      { sym: 'CIPLA', type: 'Swing (CNC)', entry: 1378, stop: 1340, target: 1440, qty: 1, why: 'Respiratory medicines market share gain.' },
-      { sym: 'TRENT', type: 'Avoid / High Risk', entry: 3017, stop: 2950, target: 3150, qty: 0, why: 'PE Ratio 160+ (Very Expensive). Blocked by risk shield.' }
+      { sym: 'POWERGRID', name: 'Power Grid Corp', logoText: '⚡', logoBg: 'bg-amber-500/20 text-amber-400 border-amber-500/30', horizon: 'Swing', type: 'Swing (20D)', entry: 265, stop: 255, target: 285, qty: 3, why: '20-Day High Breakout on Maharatna PSU.' },
+      { sym: 'INFY', name: 'Infosys Limited', logoText: 'INF', logoBg: 'bg-blue-500/20 text-blue-400 border-blue-500/30', horizon: 'Swing', type: 'Swing (CNC)', entry: 1185, stop: 1160, target: 1235, qty: 1, why: 'IT Sector Surge & Multi-million AI order wins.' },
+      { sym: 'RELIANCE', name: 'Reliance Industries', logoText: 'REL', logoBg: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30', horizon: 'Long-Term', type: 'Long-Term', entry: 1164, stop: 1120, target: 1300, qty: 1, why: 'Promoters stake increase & Jio Retail Cashflow.' },
+      { sym: 'SBIN', name: 'State Bank of India', logoText: 'SBI', logoBg: 'bg-sky-500/20 text-sky-400 border-sky-500/30', horizon: 'Intraday', type: 'Intraday (ORB)', entry: 820, stop: 805, target: 850, qty: 1, why: 'Lowest bad loans (NPA 0.57%) in 10 years.' },
+      { sym: 'TCS', name: 'Tata Consultancy Services', logoText: 'TCS', logoBg: 'bg-purple-500/20 text-purple-400 border-purple-500/30', horizon: 'Swing', type: 'Swing (CNC)', entry: 2502, stop: 2460, target: 2580, qty: 1, why: 'Bull Flag Continuation Pattern.' },
+      { sym: 'HCLTECH', name: 'HCL Technologies', logoText: 'HCL', logoBg: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30', horizon: 'Intraday', type: 'Intraday (ORB)', entry: 1428, stop: 1390, target: 1495, qty: 1, why: 'RSI 69 Breakout & Solid Dividend Yield.' },
+      { sym: 'NTPC', name: 'NTPC Energy', logoText: 'NTP', logoBg: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30', horizon: 'Long-Term', type: 'Long-Term', entry: 316, stop: 305, target: 338, qty: 3, why: 'Green energy transition & Solar expansion.' },
+      { sym: 'KOTAKBANK', name: 'Kotak Mahindra Bank', logoText: 'KM', logoBg: 'bg-rose-500/20 text-rose-400 border-rose-500/30', horizon: 'Swing', type: 'Swing (CNC)', entry: 461, stop: 445, target: 490, qty: 2, why: 'Digital customer acquisition post-RBI relief.' },
+      { sym: 'CIPLA', name: 'Cipla Pharma', logoText: 'CIP', logoBg: 'bg-teal-500/20 text-teal-400 border-teal-500/30', horizon: 'Swing', type: 'Swing (CNC)', entry: 1378, stop: 1340, target: 1440, qty: 1, why: 'Respiratory medicines market share gain.' },
+      { sym: 'TRENT', name: 'Trent Fashion Retail', logoText: 'TRN', logoBg: 'bg-slate-700 text-slate-300 border-slate-600', horizon: 'Intraday', type: 'Avoid / High Risk', entry: 3017, stop: 2950, target: 3150, qty: 0, why: 'PE Ratio 160+ (Very Expensive). Blocked by risk shield.' }
     ];
+
+    let currentFilter = 'all';
 
     function navigatePage(page) {
       ['dashboard', 'suggestions', 'reports', 'paper', 'agents', 'intelligence'].forEach(p => {
@@ -879,36 +1081,89 @@ def serve_app():
       if (page === 'agents') loadAgentPerformance();
     }
 
+    function filterLogoGrid(horizon) {
+      currentFilter = horizon;
+      ['all', 'long', 'swing', 'intra'].forEach(k => {
+        const b = document.getElementById('btn-filt-' + k);
+        if (b) b.className = 'px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 hover:text-white transition';
+      });
+      if (horizon === 'all') document.getElementById('btn-filt-all').className = 'px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white transition';
+      else if (horizon === 'Long-Term') document.getElementById('btn-filt-long').className = 'px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white transition';
+      else if (horizon === 'Swing') document.getElementById('btn-filt-swing').className = 'px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white transition';
+      else if (horizon === 'Intraday') document.getElementById('btn-filt-intra').className = 'px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white transition';
+
+      renderSuggestions();
+    }
+
     function renderSuggestions() {
       let html = '';
-      STOCKS_DATA.forEach(s => {
+      const filtered = currentFilter === 'all' ? STOCKS_DATA : STOCKS_DATA.filter(s => s.horizon === currentFilter);
+
+      filtered.forEach(s => {
         html += `
           <div class="glass-card p-5 rounded-2xl border border-slate-800 flex flex-col justify-between space-y-3">
             <div>
               <div class="flex items-center justify-between">
-                <span class="font-black text-white text-base">#${s.sym}</span>
+                <div class="flex items-center gap-3">
+                  <div class="stock-badge-logo ${s.logoBg} border">${s.logoText}</div>
+                  <div>
+                    <span class="font-black text-white text-base">#${s.sym}</span>
+                    <div class="text-[11px] text-slate-400 font-medium">${s.name}</div>
+                  </div>
+                </div>
                 <span class="text-[11px] font-bold px-2 py-0.5 rounded-full ${s.qty === 0 ? 'bg-rose-500/20 text-rose-400' : 'bg-emerald-500/20 text-emerald-400'}">
                   ${s.type}
                 </span>
               </div>
-              <p class="text-xs text-slate-400 mt-1">${s.why}</p>
+              <p class="text-xs text-slate-400 mt-2">${s.why}</p>
             </div>
             <div class="text-xs text-slate-300 space-y-1 bg-slate-900/60 p-3 rounded-xl border border-slate-800">
               <div class="flex justify-between"><span>Entry:</span> <b class="text-white">₹${s.entry}</b></div>
               <div class="flex justify-between"><span>Stop-Loss:</span> <b class="text-rose-400">₹${s.stop}</b></div>
               <div class="flex justify-between"><span>Target (2R):</span> <b class="text-emerald-400">₹${s.target}</b></div>
             </div>
-            ${s.qty > 0 ? 
-              `<button onclick="quickPaperTrade('${s.sym}', 'swing', ${s.entry}, ${s.stop}, ${s.target}, ${s.qty})" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition">
-                ⚡ Execute Paper Trade (${s.qty} Qty)
-              </button>` : 
-              `<button disabled class="w-full py-2 bg-slate-800 text-slate-500 rounded-xl text-xs font-bold cursor-not-allowed">
-                🔒 Blocked by Risk Shield
-              </button>`
-            }
+            
+            <div class="flex items-center gap-2 pt-1">
+              ${s.qty > 0 ? 
+                `<button onclick="quickPaperTrade('${s.sym}', '${s.horizon}', ${s.entry}, ${s.stop}, ${s.target}, ${s.qty})" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition">
+                  ⚡ Paper Trade (${s.qty} Qty)
+                </button>
+                <button onclick="sendStockToTelegram('${s.sym}', '${s.type}', ${s.entry}, ${s.stop}, ${s.target}, '${s.why.replace(/'/g, "")}', ${s.qty})" title="Send alert to Telegram" class="px-3.5 py-2 bg-slate-800 hover:bg-emerald-600/30 hover:text-emerald-400 text-slate-300 rounded-xl text-xs font-bold border border-slate-700 transition flex items-center gap-1.5">
+                  <i class="fa-brands fa-telegram text-sm"></i>
+                </button>` : 
+                `<button disabled class="w-full py-2 bg-slate-800 text-slate-500 rounded-xl text-xs font-bold cursor-not-allowed">
+                  🔒 Blocked by Risk Shield
+                </button>`
+              }
+            </div>
           </div>`;
       });
       document.getElementById('full-suggestions-grid').innerHTML = html;
+    }
+
+    async function sendStockToTelegram(symbol, horizon, entry, stop, target, reason, qty) {
+      try {
+        const res = await fetch('/api/telegram/broadcast-stock', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbol, horizon, entry, stop, target, reason, qty })
+        });
+        const data = await res.json();
+        alert(`📲 Telegram Sent!\n${symbol} ka suggestion Telegram bot par bhej diya gaya hai!`);
+      } catch (e) {
+        alert('Telegram broadcast error: ' + e.message);
+      }
+    }
+
+    async function broadcastAllSuggestionsToTelegram() {
+      if (!confirm('Kya aap sabhi high-conviction stock suggestions ko Telegram par broadcast karna chahte hain?')) return;
+      alert('🚀 Telegram par sabhi stocks ke signals dispatch ho rahe hain...');
+      for (const s of STOCKS_DATA) {
+        if (s.qty > 0) {
+          await sendStockToTelegram(s.sym, s.type, s.entry, s.stop, s.target, s.why, s.qty);
+        }
+      }
+      alert('✅ Sabhi stocks Telegram bot par deliver ho gaye!');
     }
 
     async function quickPaperTrade(symbol, type, entry, stop, target, qty) {
@@ -1052,7 +1307,66 @@ def serve_app():
     function openAuthModal() {
       document.getElementById('auth-modal').classList.remove('hidden');
       document.getElementById('view-login').classList.remove('hidden');
+      document.getElementById('view-forgot').classList.add('hidden');
       document.getElementById('view-onboarding').classList.add('hidden');
+    }
+
+    function showForgotPassword() {
+      document.getElementById('view-login').classList.add('hidden');
+      document.getElementById('view-forgot').classList.remove('hidden');
+      document.getElementById('step-send-otp').classList.remove('hidden');
+      document.getElementById('step-verify-otp').classList.add('hidden');
+    }
+
+    function backToLogin() {
+      document.getElementById('view-forgot').classList.add('hidden');
+      document.getElementById('view-login').classList.remove('hidden');
+    }
+
+    async function sendTelegramOTP() {
+      const email = document.getElementById('forgot-email').value;
+      const btn = document.getElementById('btn-request-otp');
+      btn.innerText = 'Sending OTP to Telegram...';
+      try {
+        const res = await fetch('/api/auth/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email })
+        });
+        const data = await res.json();
+        alert('📲 ' + data.message);
+        document.getElementById('step-send-otp').classList.add('hidden');
+        document.getElementById('step-verify-otp').classList.remove('hidden');
+      } catch (e) {
+        alert('OTP Error: ' + e.message);
+      } finally {
+        btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Send OTP to Telegram Phone';
+      }
+    }
+
+    async function submitPasswordReset() {
+      const email = document.getElementById('forgot-email').value;
+      const otp = document.getElementById('reset-otp').value;
+      const new_password = document.getElementById('reset-new-pass').value;
+
+      if (!otp || !new_password) {
+        alert('Kripya OTP aur Naya Password dono fill karein!');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/auth/reset-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, otp, new_password })
+        });
+        const data = await res.json();
+        alert('🎉 ' + data.message);
+        document.getElementById('login-pass').value = new_password;
+        backToLogin();
+      } catch (e) {
+        alert('Reset Error: ' + e.message);
+      }
     }
 
     function handleLogin(e) {
