@@ -412,8 +412,39 @@ def get_paper_portfolio(user_id: int):
             d["pnl"] = round((live_price - d["entry_price"]) * d["quantity"] - d.get("charges", 20.0), 2)
             invested_amount += (d["entry_price"] * d["quantity"])
             total_unrealized_pnl += d["pnl"]
+
+            # AI Dynamic Hold vs Sell Analysis
+            entry = d["entry_price"]
+            sl = d.get("stop_loss") or (entry * 0.96)
+            tgt = d.get("target_price") or (entry * 1.08)
+            pnl_pct = round(((live_price - entry) / entry) * 100, 2)
+
+            if live_price <= sl:
+                d["ai_action"] = "SELL"
+                d["ai_tag_color"] = "rose"
+                d["ai_reason"] = f"Stop-Loss trigger level (₹{sl}) reach ho gaya hai. Capital safe rakhne ke liye turant square-off (SELL) karein."
+            elif live_price >= tgt:
+                d["ai_action"] = "SELL"
+                d["ai_tag_color"] = "emerald"
+                d["ai_reason"] = f"Target (₹{tgt}, 2R profit) achieve ho gaya hai! Munafa book (SELL) karke profits secure karein."
+            elif pnl_pct >= 4.0:
+                d["ai_action"] = "HOLD"
+                d["ai_tag_color"] = "blue"
+                d["ai_reason"] = f"+{pnl_pct}% profit me hai. Trend strong hai, stop loss trail karke ₹{round(entry * 1.02, 1)} par HOLD karein."
+            elif pnl_pct <= -2.5:
+                d["ai_action"] = "SELL"
+                d["ai_tag_color"] = "rose"
+                d["ai_reason"] = f"Stock momentum weak ho raha hai (-{abs(pnl_pct)}%). Multi-agent risk shield exit recommend kar raha hai."
+            else:
+                d["ai_action"] = "HOLD"
+                d["ai_tag_color"] = "slate"
+                d["ai_reason"] = f"Price entry ke kareeb consolidate kar raha hai. Target (₹{tgt}) ke reach hone tak patient HOLD maintain karein."
         else:
             total_realized_pnl += d["pnl"]
+            d["ai_action"] = "CLOSED"
+            d["ai_tag_color"] = "slate"
+            d["ai_reason"] = f"Position closed. Realized P&L: ₹{d.get('pnl', 0)}."
+
         trades.append(d)
 
     total_pnl = total_unrealized_pnl + total_realized_pnl
@@ -965,12 +996,13 @@ def serve_app():
                 <th class="p-3.5">Target</th>
                 <th class="p-3.5">Status</th>
                 <th class="p-3.5">Simulated P&L</th>
+                <th class="p-3.5">AI Suggestion (Hold / Sell)</th>
                 <th class="p-3.5">Action</th>
               </tr>
             </thead>
             <tbody id="paper-rows" class="divide-y divide-slate-100 text-slate-700">
               <tr>
-                <td colspan="10" class="p-6 text-center text-slate-400">No active trades yet. Suggestions tab se stock pick karein!</td>
+                <td colspan="11" class="p-6 text-center text-slate-400">No active trades yet. Suggestions tab se stock pick karein!</td>
               </tr>
             </tbody>
           </table>
@@ -1467,10 +1499,40 @@ def serve_app():
               '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300">🛑 CLOSED</span>' :
               '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">🟢 OPEN</span>';
 
+            let aiAdviceBadge = '';
+            if (isClosed) {
+              aiAdviceBadge = '<span class="text-slate-400 text-[11px]">Position Closed</span>';
+            } else if (t.ai_action === 'SELL') {
+              aiAdviceBadge = `
+                <div class="flex flex-col gap-0.5">
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-100 text-rose-800 border border-rose-300 w-max">
+                    🛑 AI ADVICE: SELL
+                  </span>
+                  <span class="text-[10px] text-slate-600 max-w-[220px] whitespace-normal leading-tight">
+                    ${t.ai_reason || 'Exit to protect profit/capital.'}
+                  </span>
+                </div>`;
+            } else {
+              aiAdviceBadge = `
+                <div class="flex flex-col gap-0.5">
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-300 w-max">
+                    💎 AI ADVICE: HOLD
+                  </span>
+                  <span class="text-[10px] text-slate-600 max-w-[220px] whitespace-normal leading-tight">
+                    ${t.ai_reason || 'Maintain hold till target.'}
+                  </span>
+                </div>`;
+            }
+
             const actionCell = !isClosed ? 
-              `<button onclick="sellUserTrade(${t.id})" class="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded text-[11px] shadow-sm transition">
-                Sell (Red)
-              </button>` :
+              `<div class="flex items-center gap-1.5">
+                <button onclick="sellUserTrade(${t.id})" class="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded text-[11px] shadow-sm transition">
+                  Sell (Red)
+                </button>
+                <button onclick="alert('💎 AI Recommendation: ' + '${t.ai_action || 'HOLD'}' + '\\n\\nKyo: ' + '${(t.ai_reason || '').replace(/'/g, '')}')" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded text-[11px] border border-slate-200 transition" title="AI Advice Explanation">
+                  ℹ️ Kyo?
+                </button>
+              </div>` :
               `<span class="text-slate-400 text-[11px]">Closed</span>`;
 
             html += `
@@ -1484,6 +1546,7 @@ def serve_app():
                 <td class="p-3.5 text-emerald-600 font-bold">₹${t.target_price}</td>
                 <td class="p-3.5">${statusTag}</td>
                 <td class="p-3.5 font-bold ${t.pnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}">₹${t.pnl.toFixed(2)}</td>
+                <td class="p-3.5">${aiAdviceBadge}</td>
                 <td class="p-3.5">${actionCell}</td>
               </tr>`;
           });
@@ -1491,7 +1554,7 @@ def serve_app():
         } else {
           document.getElementById('paper-rows').innerHTML = `
             <tr>
-              <td colspan="10" class="p-6 text-center text-slate-400">Aapka account ready hai! Kal subah 9:15 AM market khulte hi suggestions tab se real price par trade buy karein.</td>
+              <td colspan="11" class="p-6 text-center text-slate-400">Aapka account ready hai! Kal subah 9:15 AM market khulte hi suggestions tab se real price par trade buy karein.</td>
             </tr>`;
         }
       } catch (e) {
