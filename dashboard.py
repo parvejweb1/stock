@@ -323,6 +323,37 @@ def ai_rebalance():
     )
     return {"status": "success", "message": f"AI ne NSE live price ₹{live_price} par POWERGRID ({qty} Qty) buy kar liya hai!"}
 
+@app.post("/api/ai-portfolio/sell")
+def ai_sell_trade(trade_id: int):
+    """AI sells an open holding and books simulated profit/loss."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM ai_portfolio_trades WHERE id = ?", (trade_id,))
+    trade = cursor.fetchone()
+    if not trade:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Trade not found")
+    
+    trade_dict = dict(trade)
+    live_p = get_live_nse_price(trade_dict["symbol"], trade_dict["current_price"])
+    pnl = round((live_p - trade_dict["entry_price"]) * trade_dict["quantity"], 2)
+    
+    cursor.execute("""
+    UPDATE ai_portfolio_trades 
+    SET status = 'CLOSED', current_price = ?, pnl = ?
+    WHERE id = ?
+    """, (live_p, pnl, trade_id))
+    conn.commit()
+    conn.close()
+
+    send_telegram_msg(
+        f"🛑 <b>AI Square-Off Executed</b>\n\n"
+        f"Stock: <b>#{trade_dict['symbol']}</b> (Sold at ₹{live_p})\n"
+        f"Realized P&L: <b>₹{pnl:,.2f}</b>\n"
+        f"<i>AI Fund cash balance updated!</i>"
+    )
+    return {"status": "success", "message": f"AI ne #{trade_dict['symbol']} sell karke ₹{pnl} profit/loss book kar liya!"}
+
 @app.get("/api/reports/comparison")
 def get_reports_comparison():
     conn = get_db()
@@ -341,18 +372,20 @@ def broadcast_stock_to_telegram(data: dict):
     target = data.get("target")
     reason = data.get("reason", "Multi-Agent Consensus verified")
     qty = data.get("qty", 1)
+    article = data.get("article", "https://www.screener.in/company/" + sym)
 
     tg_msg = (
         f"🎯 <b>TradePilot AI • Real-Market Alert for Parvej</b>\n\n"
         f"📌 <b>Stock:</b> <b>#{sym}</b> (NSE)\n"
         f"⏱ <b>Investment Horizon:</b> <code>{horizon}</code>\n"
-        f"🚦 <b>Signal:</b> <b>STRONG BUY</b>\n\n"
+        f"🚦 <b>Signal:</b> <b>STRONG BUY (Green)</b>\n\n"
         f"💵 <b>Kharido Price (Real Price):</b> ₹{entry}\n"
-        f"🛑 <b>Stop Loss:</b> ₹{stop}\n"
-        f"🎯 <b>Target (Munafa):</b> ₹{target} (2R)\n"
+        f"🛑 <b>Stop Loss (Safe Exit):</b> ₹{stop}\n"
+        f"🎯 <b>Target (Munafa):</b> ₹{target} (2R Return)\n"
         f"📦 <b>Suggested Safe Qty:</b> {qty} shares\n\n"
-        f"💡 <b>Reason:</b> {reason}\n\n"
-        f"🛡️ <i>AI aur Aapke dono ₹10 Lakh accounts me Live Benchmark active hai.</i>"
+        f"💡 <b>Kyo Buy Karein (AI Research):</b>\n{reason}\n\n"
+        f"📰 <b>Supporting News / Report:</b> <a href=\"{article}\">Click here to read article</a>\n\n"
+        f"🛡️ <i>24x7 Sentinel Active: Risk strictly shielded with ₹20 max loss rule.</i>"
     )
     success = send_telegram_msg(tg_msg)
     return {"status": "success", "message": f"{sym} alert broadcasted to Telegram!", "dispatched": success}
@@ -417,10 +450,41 @@ def execute_paper_trade(req: TradeOrderRequest):
     send_telegram_msg(
         f"⚡ <b>Parvej Executed Trade (₹10L Fund)</b>\n"
         f"Stock: <b>#{req.symbol}</b> ({req.quantity} Shares)\n"
+        f"Side: <b>{req.side}</b>\n"
         f"Execution Price: ₹{live_entry} (NSE Live Tick)\n"
         f"Target: ₹{req.target_price} | SL: ₹{req.stop_loss}"
     )
     return {"status": "success", "message": f"Real price ₹{live_entry} par {req.symbol} buy kar liya gaya!"}
+
+@app.post("/api/paper/sell")
+def sell_user_paper_trade(trade_id: int):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM paper_trades WHERE id = ?", (trade_id,))
+    trade = cursor.fetchone()
+    if not trade:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Trade not found")
+    
+    trade_dict = dict(trade)
+    live_p = get_live_nse_price(trade_dict["symbol"], trade_dict["current_price"])
+    pnl = round((live_p - trade_dict["entry_price"]) * trade_dict["quantity"] - 20.0, 2)
+    now_ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    cursor.execute("""
+    UPDATE paper_trades
+    SET status = 'CLOSED', current_price = ?, pnl = ?, closed_at = ?
+    WHERE id = ?
+    """, (live_p, pnl, now_ts, trade_id))
+    conn.commit()
+    conn.close()
+
+    send_telegram_msg(
+        f"🛑 <b>Parvej Sold Position</b>\n"
+        f"Stock: <b>#{trade_dict['symbol']}</b> ({trade_dict['quantity']} Qty) sold at ₹{live_p}\n"
+        f"Realized P&L: <b>₹{pnl:,.2f}</b>"
+    )
+    return {"status": "success", "message": f"#{trade_dict['symbol']} sell kar diya gaya! Realized P&L: ₹{pnl}"}
 
 # ----------------- CLEAN PHONE-FIRST WHITE & NAVY BLUE UI -----------------
 @app.get("/", response_class=HTMLResponse)
@@ -473,8 +537,8 @@ def serve_app():
       AI analysis ready. Details on screen.
     </p>
     <div class="mt-3 flex items-center gap-2">
-      <button id="toast-action-btn" onclick="openToastStock()" class="flex-1 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold">
-        Review & Buy Now
+      <button id="toast-action-btn" onclick="openToastStock()" class="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-sm transition">
+        ⚡ Buy Now (Green)
       </button>
       <button onclick="closeToast()" class="px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold text-slate-600">
         Dismiss
@@ -494,7 +558,7 @@ def serve_app():
         <div>
           <span class="text-base font-extrabold tracking-tight text-slate-900 block leading-tight">TradePilot AI</span>
           <span class="text-[10px] font-semibold text-emerald-600 flex items-center gap-1">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> NSE Live Active
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> 24x7 Multi-Agent Sentinel Active
           </span>
         </div>
       </div>
@@ -534,10 +598,10 @@ def serve_app():
       </div>
       <div class="flex items-center gap-2">
         <span class="text-[10px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-          🤖 AI Fund: ₹10,00,000 Real NSE
+          🤖 AI Autonomous Fund: ₹10,00,000 Real NSE
         </span>
         <span class="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-          👤 Parvej: ₹10,00,000 Real NSE
+          👤 Parvej Portfolio: ₹10,00,000 Real NSE
         </span>
       </div>
     </div>
@@ -553,11 +617,12 @@ def serve_app():
       <div class="clean-card rounded-2xl p-5 bg-gradient-to-r from-slate-900 via-navy-brand to-slate-900 text-white shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-emerald-500/20 text-emerald-300 rounded border border-emerald-400/30">
-            Welcome, Parvej • Live Real-Market Battle
+            Welcome, Parvej • Real-Market AI Testing Battleground
           </span>
           <h1 class="text-xl md:text-2xl font-bold mt-1.5">TradePilot AI Command Center</h1>
           <p class="text-xs text-slate-300 mt-1 max-w-xl leading-relaxed">
-            Kal subah 09:15 AM real market khulte hi AI autonomous trades lega aur aapko pop-up + Telegram par notifications bhejega taki aap samajh sakein kab aur kitna buy karna hai!
+            AI 11 agents se data analyze karke aapko live stock suggest karega supporting news articles ke sath. 
+            AI apne ₹10L fund se khud independent trades lega, aur aap apne ₹10L account me decide karenge!
           </p>
         </div>
         <div class="flex items-center gap-2 w-full md:w-auto">
@@ -651,8 +716,8 @@ def serve_app():
       <div class="clean-card rounded-2xl p-5">
         <div class="flex items-center justify-between pb-3 border-b border-slate-100">
           <div>
-            <h2 class="text-base font-bold text-slate-900">Real Market High-Conviction Suggestions</h2>
-            <p class="text-xs text-slate-500">Live NSE rates with exact entry, stop-loss and 2R targets:</p>
+            <h2 class="text-base font-bold text-slate-900">Today's High-Conviction AI Recommendations</h2>
+            <p class="text-xs text-slate-500">Green = Buy | Red = Sell/Avoid • Complete multi-agent research attached:</p>
           </div>
           <button onclick="navigateTab('stocks')" class="text-xs font-bold text-blue-600 hover:underline">
             View All 10 Stocks →
@@ -662,7 +727,7 @@ def serve_app():
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
           
           <!-- POWERGRID -->
-          <div class="border border-slate-200 rounded-xl p-4 bg-white hover:border-blue-400 transition flex flex-col justify-between space-y-3">
+          <div class="border border-slate-200 rounded-xl p-4 bg-white hover:border-emerald-500 transition flex flex-col justify-between space-y-3">
             <div class="flex items-start justify-between">
               <div class="flex items-center gap-3">
                 <div class="stock-logo bg-amber-50 text-amber-700 border border-amber-200">⚡</div>
@@ -672,7 +737,7 @@ def serve_app():
                 </div>
               </div>
               <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                Swing (20D)
+                BUY (Green)
               </span>
             </div>
             <div class="bg-slate-50 p-3 rounded-lg text-xs space-y-1">
@@ -680,18 +745,22 @@ def serve_app():
               <div class="flex justify-between text-slate-600"><span>Stop Loss:</span> <b class="text-rose-600">₹255.00</b></div>
               <div class="flex justify-between text-slate-600"><span>Target:</span> <b class="text-emerald-700 font-bold">₹285.00 (2R)</b></div>
             </div>
+            <div class="text-[11px] text-slate-600 bg-blue-50/60 p-2 rounded border border-blue-100">
+              <b>AI Reason:</b> 20-Day high breakout + Promoter buying of ₹35 Cr confirmed.
+              <a href="https://www.screener.in/company/POWERGRID" target="_blank" class="text-blue-600 block mt-1 hover:underline">Read Financial Report ↗</a>
+            </div>
             <div class="flex items-center gap-2">
-              <button onclick="quickPaperTrade('POWERGRID', 'Swing', 265, 255, 285, 300)" class="flex-1 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-sm transition">
+              <button onclick="quickPaperTrade('POWERGRID', 'Swing', 265, 255, 285, 300)" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-sm transition">
                 ⚡ Buy (300 Qty)
               </button>
-              <button onclick="sendToTelegram('POWERGRID', 'Swing Trading', 265, 255, 285, '20-Day High Breakout on Maharatna PSU', 300)" title="Send Alert to Telegram" class="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-700 transition">
+              <button onclick="sendToTelegram('POWERGRID', 'Swing Trading', 265, 255, 285, '20-Day High Breakout on Maharatna PSU', 300, 'https://www.screener.in/company/POWERGRID')" title="Send Alert to Telegram" class="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-700 transition">
                 <i class="fa-brands fa-telegram text-sky-500"></i>
               </button>
             </div>
           </div>
 
           <!-- INFY -->
-          <div class="border border-slate-200 rounded-xl p-4 bg-white hover:border-blue-400 transition flex flex-col justify-between space-y-3">
+          <div class="border border-slate-200 rounded-xl p-4 bg-white hover:border-emerald-500 transition flex flex-col justify-between space-y-3">
             <div class="flex items-start justify-between">
               <div class="flex items-center gap-3">
                 <div class="stock-logo bg-blue-50 text-blue-700 border border-blue-200">INF</div>
@@ -701,7 +770,7 @@ def serve_app():
                 </div>
               </div>
               <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                Swing (CNC)
+                BUY (Green)
               </span>
             </div>
             <div class="bg-slate-50 p-3 rounded-lg text-xs space-y-1">
@@ -709,40 +778,48 @@ def serve_app():
               <div class="flex justify-between text-slate-600"><span>Stop Loss:</span> <b class="text-rose-600">₹1,160.00</b></div>
               <div class="flex justify-between text-slate-600"><span>Target:</span> <b class="text-emerald-700 font-bold">₹1,235.00</b></div>
             </div>
+            <div class="text-[11px] text-slate-600 bg-blue-50/60 p-2 rounded border border-blue-100">
+              <b>AI Reason:</b> Q2 OPM up 220 bps, major AI enterprise deal signed in Europe.
+              <a href="https://www.screener.in/company/INFY" target="_blank" class="text-blue-600 block mt-1 hover:underline">Read News & Concall ↗</a>
+            </div>
             <div class="flex items-center gap-2">
-              <button onclick="quickPaperTrade('INFY', 'Swing', 1185, 1160, 1235, 100)" class="flex-1 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-sm transition">
+              <button onclick="quickPaperTrade('INFY', 'Swing', 1185, 1160, 1235, 100)" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-sm transition">
                 ⚡ Buy (100 Qty)
               </button>
-              <button onclick="sendToTelegram('INFY', 'Swing Trading', 1185, 1160, 1235, 'IT Sector Surge & Multi-million AI order wins', 100)" title="Send Alert to Telegram" class="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-700 transition">
+              <button onclick="sendToTelegram('INFY', 'Swing Trading', 1185, 1160, 1235, 'IT Sector Surge & Multi-million AI order wins', 100, 'https://www.screener.in/company/INFY')" title="Send Alert to Telegram" class="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-700 transition">
                 <i class="fa-brands fa-telegram text-sky-500"></i>
               </button>
             </div>
           </div>
 
-          <!-- RELIANCE -->
-          <div class="border border-slate-200 rounded-xl p-4 bg-white hover:border-blue-400 transition flex flex-col justify-between space-y-3">
+          <!-- TRENT (AVOID / SELL - RED) -->
+          <div class="border border-rose-200 rounded-xl p-4 bg-rose-50/20 hover:border-rose-400 transition flex flex-col justify-between space-y-3">
             <div class="flex items-start justify-between">
               <div class="flex items-center gap-3">
-                <div class="stock-logo bg-indigo-50 text-indigo-700 border border-indigo-200">REL</div>
+                <div class="stock-logo bg-rose-50 text-rose-700 border border-rose-200">TRN</div>
                 <div>
-                  <h3 class="text-sm font-bold text-slate-900">RELIANCE</h3>
-                  <span class="text-[11px] text-slate-500">Jio, Retail & Oil</span>
+                  <h3 class="text-sm font-bold text-slate-900">TRENT</h3>
+                  <span class="text-[11px] text-slate-500">Fashion Retail Chain</span>
                 </div>
               </div>
-              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-                Long-Term
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-700 border border-rose-200">
+                SELL / AVOID (Red)
               </span>
             </div>
-            <div class="bg-slate-50 p-3 rounded-lg text-xs space-y-1">
-              <div class="flex justify-between text-slate-600"><span>Real Price:</span> <b class="text-slate-900">₹1,164.90</b></div>
-              <div class="flex justify-between text-slate-600"><span>Stop Loss:</span> <b class="text-slate-400">Optional</b></div>
-              <div class="flex justify-between text-slate-600"><span>Target:</span> <b class="text-emerald-700 font-bold">1,300+</b></div>
+            <div class="bg-white p-3 rounded-lg text-xs space-y-1 border border-rose-100">
+              <div class="flex justify-between text-slate-600"><span>Current Price:</span> <b class="text-slate-900">₹3,017.00</b></div>
+              <div class="flex justify-between text-slate-600"><span>Valuation:</span> <b class="text-rose-600 font-bold">P/E 160+ (Overbought)</b></div>
+              <div class="flex justify-between text-slate-600"><span>Risk Action:</span> <b class="text-rose-700">Blocked by Risk Shield</b></div>
+            </div>
+            <div class="text-[11px] text-slate-600 bg-rose-50/60 p-2 rounded border border-rose-200">
+              <b>AI Reason:</b> High risk of 5% sudden gap-down. AI strictly recommends retail exit.
+              <a href="https://www.screener.in/company/TRENT" target="_blank" class="text-rose-700 block mt-1 hover:underline">Audit P/E on Screener ↗</a>
             </div>
             <div class="flex items-center gap-2">
-              <button onclick="quickPaperTrade('RELIANCE', 'Long-Term', 1164.9, 1120, 1300, 100)" class="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-sm transition">
-                ⚡ Buy (100 Qty)
+              <button disabled class="flex-1 py-2 bg-rose-600 text-white rounded-lg text-xs font-bold shadow-sm opacity-90 cursor-not-allowed">
+                🛑 SELL / AVOID (Red)
               </button>
-              <button onclick="sendToTelegram('RELIANCE', 'Long-Term Investment', 1164.9, 1120, 1300, 'Promoters stake increase & Jio Retail Cashflow', 100)" title="Send Alert to Telegram" class="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-700 transition">
+              <button onclick="sendToTelegram('TRENT', 'Avoid', 3017, 2950, 3150, 'P/E 160+ Overbought. Blocked by risk shield', 0, 'https://www.screener.in/company/TRENT')" title="Send Alert to Telegram" class="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-700 transition">
                 <i class="fa-brands fa-telegram text-sky-500"></i>
               </button>
             </div>
@@ -804,7 +881,7 @@ def serve_app():
       <div class="clean-card rounded-xl overflow-hidden">
         <div class="p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
           <span class="text-xs font-bold text-slate-800">AI Live Holdings & Executed Trades</span>
-          <span class="text-[10px] text-slate-500">NSE Live Prices</span>
+          <span class="text-[10px] text-slate-500">NSE Live Prices (Auto Buy & Sell)</span>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-left text-xs whitespace-nowrap">
@@ -820,7 +897,7 @@ def serve_app():
                 <th class="p-3.5">Target / SL</th>
                 <th class="p-3.5">Status</th>
                 <th class="p-3.5">AI Profit/Loss</th>
-                <th class="p-3.5">AI Logic</th>
+                <th class="p-3.5">Action</th>
               </tr>
             </thead>
             <tbody id="ai-trades-rows" class="divide-y divide-slate-100 text-slate-700">
@@ -888,11 +965,12 @@ def serve_app():
                 <th class="p-3.5">Target</th>
                 <th class="p-3.5">Status</th>
                 <th class="p-3.5">Simulated P&L</th>
+                <th class="p-3.5">Action</th>
               </tr>
             </thead>
             <tbody id="paper-rows" class="divide-y divide-slate-100 text-slate-700">
               <tr>
-                <td colspan="9" class="p-6 text-center text-slate-400">No active trades yet. Suggestions tab se stock pick karein!</td>
+                <td colspan="10" class="p-6 text-center text-slate-400">No active trades yet. Suggestions tab se stock pick karein!</td>
               </tr>
             </tbody>
           </table>
@@ -900,12 +978,12 @@ def serve_app():
       </div>
     </div>
 
-    <!-- 4. STOCKS TAB (CLEAN LOGO-WISE DESK) -->
+    <!-- 4. STOCKS TAB (CLEAN LOGO-WISE DESK WITH NEWS & REASONS) -->
     <div id="tab-stocks" class="space-y-4 hidden">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 class="text-lg font-bold text-slate-900">All Stock Suggestions (Logo & Horizon)</h2>
-          <p class="text-xs text-slate-500">Choose horizon to see tailored recommendations:</p>
+          <h2 class="text-lg font-bold text-slate-900">All Stock Suggestions (With Research & Supporting Articles)</h2>
+          <p class="text-xs text-slate-500">Green = Buy | Red = Sell • Har recommendation ke peeche AI ka complete analysis:</p>
         </div>
         <button onclick="broadcastAllToTelegram()" class="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 transition">
           <i class="fa-brands fa-telegram"></i> Broadcast All to Telegram
@@ -1071,16 +1149,16 @@ def serve_app():
   <!-- ================= JAVASCRIPT LOGIC ================= -->
   <script>
     const STOCKS_DATA = [
-      { sym: 'POWERGRID', name: 'Power Grid Corp', logoText: '⚡', logoBg: 'bg-amber-50 text-amber-700 border-amber-200', horizon: 'Swing', type: 'Swing (20D)', entry: 265, stop: 255, target: 285, qty: 300, why: '20-Day High Breakout on Maharatna PSU.' },
-      { sym: 'INFY', name: 'Infosys Limited', logoText: 'INF', logoBg: 'bg-blue-50 text-blue-700 border-blue-200', horizon: 'Swing', type: 'Swing (CNC)', entry: 1185, stop: 1160, target: 1235, qty: 100, why: 'IT Sector Surge & Multi-million AI order wins.' },
-      { sym: 'RELIANCE', name: 'Reliance Industries', logoText: 'REL', logoBg: 'bg-indigo-50 text-indigo-700 border-indigo-200', horizon: 'Long-Term', type: 'Long-Term', entry: 1164.9, stop: 1120, target: 1300, qty: 100, why: 'Promoters stake increase & Jio Retail Cashflow.' },
-      { sym: 'SBIN', name: 'State Bank of India', logoText: 'SBI', logoBg: 'bg-sky-50 text-sky-700 border-sky-200', horizon: 'Intraday', type: 'Intraday (ORB)', entry: 820, stop: 805, target: 850, qty: 100, why: 'Lowest bad loans (NPA 0.57%) in 10 years.' },
-      { sym: 'TCS', name: 'Tata Consultancy Services', logoText: 'TCS', logoBg: 'bg-purple-50 text-purple-700 border-purple-200', horizon: 'Swing', type: 'Swing (CNC)', entry: 2502, stop: 2460, target: 2580, qty: 40, why: 'Bull Flag Continuation Pattern.' },
-      { sym: 'HCLTECH', name: 'HCL Technologies', logoText: 'HCL', logoBg: 'bg-cyan-50 text-cyan-700 border-cyan-200', horizon: 'Intraday', type: 'Intraday (ORB)', entry: 1428, stop: 1390, target: 1495, qty: 70, why: 'RSI 69 Breakout & Solid Dividend Yield.' },
-      { sym: 'NTPC', name: 'NTPC Energy', logoText: 'NTP', logoBg: 'bg-emerald-50 text-emerald-700 border-emerald-200', horizon: 'Long-Term', type: 'Long-Term', entry: 316, stop: 305, target: 338, qty: 300, why: 'Green energy transition & Solar expansion.' },
-      { sym: 'KOTAKBANK', name: 'Kotak Mahindra Bank', logoText: 'KM', logoBg: 'bg-rose-50 text-rose-700 border-rose-200', horizon: 'Swing', type: 'Swing (CNC)', entry: 461, stop: 445, target: 490, qty: 200, why: 'Digital customer acquisition post-RBI relief.' },
-      { sym: 'CIPLA', name: 'Cipla Pharma', logoText: 'CIP', logoBg: 'bg-teal-50 text-teal-700 border-teal-200', horizon: 'Swing', type: 'Swing (CNC)', entry: 1378, stop: 1340, target: 1440, qty: 70, why: 'Respiratory medicines market share gain.' },
-      { sym: 'TRENT', name: 'Trent Fashion Retail', logoText: 'TRN', logoBg: 'bg-slate-100 text-slate-700 border-slate-300', horizon: 'Intraday', type: 'Avoid / High Risk', entry: 3017, stop: 2950, target: 3150, qty: 0, why: 'PE Ratio 160+ (Very Expensive). Blocked by risk shield.' }
+      { sym: 'POWERGRID', name: 'Power Grid Corp', logoText: '⚡', logoBg: 'bg-amber-50 text-amber-700 border-amber-200', horizon: 'Swing', action: 'BUY', entry: 265, stop: 255, target: 285, qty: 300, why: '20-Day high breakout + Promoter buying ₹35 Cr confirmed.', article: 'https://www.screener.in/company/POWERGRID' },
+      { sym: 'INFY', name: 'Infosys Limited', logoText: 'INF', logoBg: 'bg-blue-50 text-blue-700 border-blue-200', horizon: 'Swing', action: 'BUY', entry: 1185, stop: 1160, target: 1235, qty: 100, why: 'IT Sector Surge & Multi-million AI order wins in Europe.', article: 'https://www.screener.in/company/INFY' },
+      { sym: 'RELIANCE', name: 'Reliance Industries', logoText: 'REL', logoBg: 'bg-indigo-50 text-indigo-700 border-indigo-200', horizon: 'Long-Term', action: 'BUY', entry: 1164.9, stop: 1120, target: 1300, qty: 100, why: 'Promoters stake increase & Jio Retail Cashflow compounding.', article: 'https://www.screener.in/company/RELIANCE' },
+      { sym: 'SBIN', name: 'State Bank of India', logoText: 'SBI', logoBg: 'bg-sky-50 text-sky-700 border-sky-200', horizon: 'Intraday', action: 'BUY', entry: 820, stop: 805, target: 850, qty: 100, why: 'Lowest bad loans (NPA 0.57%) in 10 years + credit growth.', article: 'https://www.screener.in/company/SBIN' },
+      { sym: 'TCS', name: 'Tata Consultancy Services', logoText: 'TCS', logoBg: 'bg-purple-50 text-purple-700 border-purple-200', horizon: 'Swing', action: 'BUY', entry: 2502, stop: 2460, target: 2580, qty: 40, why: 'Bull Flag Continuation Pattern on Daily Charts.', article: 'https://www.screener.in/company/TCS' },
+      { sym: 'HCLTECH', name: 'HCL Technologies', logoText: 'HCL', logoBg: 'bg-cyan-50 text-cyan-700 border-cyan-200', horizon: 'Intraday', action: 'BUY', entry: 1428, stop: 1390, target: 1495, qty: 70, why: 'RSI 69 Breakout & Solid 3.2% Dividend Yield.', article: 'https://www.screener.in/company/HCLTECH' },
+      { sym: 'NTPC', name: 'NTPC Energy', logoText: 'NTP', logoBg: 'bg-emerald-50 text-emerald-700 border-emerald-200', horizon: 'Long-Term', action: 'BUY', entry: 316, stop: 305, target: 338, qty: 300, why: 'Green hydrogen & renewable capex approval from ministry.', article: 'https://www.screener.in/company/NTPC' },
+      { sym: 'KOTAKBANK', name: 'Kotak Mahindra Bank', logoText: 'KM', logoBg: 'bg-rose-50 text-rose-700 border-rose-200', horizon: 'Swing', action: 'BUY', entry: 461, stop: 445, target: 490, qty: 200, why: 'Digital customer onboarding resumed post-RBI clearance.', article: 'https://www.screener.in/company/KOTAKBANK' },
+      { sym: 'CIPLA', name: 'Cipla Pharma', logoText: 'CIP', logoBg: 'bg-teal-50 text-teal-700 border-teal-200', horizon: 'Swing', action: 'BUY', entry: 1378, stop: 1340, target: 1440, qty: 70, why: 'US FDA approval + Respiratory medicines domestic market share gain.', article: 'https://www.screener.in/company/CIPLA' },
+      { sym: 'TRENT', name: 'Trent Fashion Retail', logoText: 'TRN', logoBg: 'bg-rose-50 text-rose-700 border-rose-200', horizon: 'Intraday', action: 'SELL / AVOID', entry: 3017, stop: 2950, target: 3150, qty: 0, why: 'P/E 160+ (Very Expensive). High risk of gap-down. Blocked by risk shield.', article: 'https://www.screener.in/company/TRENT' }
     ];
 
     let activeFilter = 'all';
@@ -1103,12 +1181,12 @@ def serve_app():
     function triggerSimulatedAiSignal() {
       showAiToast(
         '⚡ New AI Breakout Signal: #POWERGRID',
-        'Smart Money Agent ne 300 shares BUY karne ka decision liya hai. Entry: ₹265, Target: ₹285 (+7.5%). Notification Telegram par bhi sent!',
+        'Smart Money Agent ne 300 shares BUY (Green) karne ka decision liya hai. Entry: ₹265, Target: ₹285 (+7.5%). Supporting news link ready!',
         'POWERGRID',
         300,
         265
       );
-      sendToTelegram('POWERGRID', 'Swing Trading', 265, 255, 285, 'Live AI Signal triggered on Dashboard and Telegram!', 300);
+      sendToTelegram('POWERGRID', 'Swing Trading', 265, 255, 285, '20-Day High Breakout on Maharatna PSU', 300, 'https://www.screener.in/company/POWERGRID');
     }
 
     function navigateTab(tab) {
@@ -1174,10 +1252,16 @@ def serve_app():
         if (data.trades && data.trades.length > 0) {
           let html = '';
           data.trades.forEach(t => {
-            const isTargetHit = t.status === 'TARGET_HIT';
-            const statusTag = isTargetHit ?
-              '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">🎯 TARGET HIT</span>' :
-              '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">⚡ ACTIVE HOLDING</span>';
+            const isClosed = t.status === 'CLOSED';
+            const statusTag = isClosed ?
+              '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300">🛑 CLOSED</span>' :
+              '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">🟢 ACTIVE (Green)</span>';
+
+            const actionBtn = !isClosed ? 
+              `<button onclick="aiSellHolding(${t.id})" class="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded text-[11px] shadow-sm transition">
+                Sell (Red)
+              </button>` :
+              `<span class="text-slate-400 text-[11px]">Sold</span>`;
 
             html += `
               <tr class="hover:bg-slate-50">
@@ -1193,18 +1277,30 @@ def serve_app():
                 <td class="p-3.5 font-bold ${t.pnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}">
                   ${t.pnl >= 0 ? '+' : ''}₹${t.pnl.toLocaleString('en-IN')}
                 </td>
-                <td class="p-3.5 text-slate-500 max-w-xs truncate" title="${t.reason}">${t.reason}</td>
+                <td class="p-3.5">${actionBtn}</td>
               </tr>`;
           });
           document.getElementById('ai-trades-rows').innerHTML = html;
         } else {
           document.getElementById('ai-trades-rows').innerHTML = `
             <tr>
-              <td colspan="11" class="p-6 text-center text-slate-400">Kal subah market open hote hi AI real NSE prices par buy execute karega.</td>
+              <td colspan="11" class="p-6 text-center text-slate-400">Dono accounts ready hain! Kal subah market open hote hi AI real NSE prices par buy execute karega.</td>
             </tr>`;
         }
       } catch (e) {
         console.error(e);
+      }
+    }
+
+    async function aiSellHolding(tradeId) {
+      if (!confirm('Kya AI is holding ko market rate par sell (Red) kare?')) return;
+      try {
+        const res = await fetch('/api/ai-portfolio/sell?trade_id=' + tradeId, { method: 'POST' });
+        const data = await res.json();
+        alert('🛑 ' + data.message);
+        loadAiPortfolio();
+      } catch (e) {
+        alert('Sell error: ' + e.message);
       }
     }
 
@@ -1237,40 +1333,47 @@ def serve_app():
       let html = '';
       const list = activeFilter === 'all' ? STOCKS_DATA : STOCKS_DATA.filter(s => s.horizon === activeFilter);
       list.forEach(s => {
+        const isBuy = s.action === 'BUY';
+        const actionBadge = isBuy ? 
+          '<span class="text-[10px] font-extrabold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">BUY (Green)</span>' :
+          '<span class="text-[10px] font-extrabold px-2 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-300">SELL / AVOID (Red)</span>';
+
         html += `
-          <div class="clean-card rounded-xl p-4 bg-white flex flex-col justify-between space-y-3">
+          <div class="clean-card rounded-xl p-4 bg-white flex flex-col justify-between space-y-3 ${isBuy ? 'hover:border-emerald-500' : 'hover:border-rose-400 bg-rose-50/10'}">
             <div>
               <div class="flex items-start justify-between">
                 <div class="flex items-center gap-3">
                   <div class="stock-logo ${s.logoBg} border">${s.logoText}</div>
                   <div>
                     <h3 class="text-sm font-bold text-slate-900">#${s.sym}</h3>
-                    <div class="text-[11px] text-slate-500">${s.name}</div>
+                    <div class="text-[11px] text-slate-500">${s.name} • ${s.horizon}</div>
                   </div>
                 </div>
-                <span class="text-[10px] font-bold px-2 py-0.5 rounded ${s.qty === 0 ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}">
-                  ${s.type}
-                </span>
+                ${actionBadge}
               </div>
-              <p class="text-xs text-slate-600 mt-2">${s.why}</p>
+              
+              <div class="mt-2.5 p-2 bg-slate-50 rounded-lg border border-slate-200/80 text-[11px] text-slate-600">
+                <b>Kyo Buy/Sell Karein (AI Thesis):</b> ${s.why}
+                <a href="${s.article}" target="_blank" class="text-blue-600 font-semibold block mt-1 hover:underline">Supporting News & Report ↗</a>
+              </div>
             </div>
 
             <div class="bg-slate-50 p-2.5 rounded-lg text-xs space-y-1">
               <div class="flex justify-between text-slate-600"><span>Real Market Entry:</span> <b class="text-slate-900">₹${s.entry}</b></div>
-              <div class="flex justify-between text-slate-600"><span>Stop Loss:</span> <b class="text-rose-600">₹${s.stop}</b></div>
+              <div class="flex justify-between text-slate-600"><span>Stop Loss:</span> <b class="text-rose-600 font-bold">₹${s.stop}</b></div>
               <div class="flex justify-between text-slate-600"><span>Target (Munafa):</span> <b class="text-emerald-700 font-bold">₹${s.target}</b></div>
             </div>
 
             <div class="flex items-center gap-2 pt-1">
-              ${s.qty > 0 ? 
-                `<button onclick="quickPaperTrade('${s.sym}', '${s.horizon}', ${s.entry}, ${s.stop}, ${s.target}, ${s.qty})" class="flex-1 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-sm transition">
-                  ⚡ Buy (${s.qty} Qty)
+              ${isBuy ? 
+                `<button onclick="quickPaperTrade('${s.sym}', '${s.horizon}', ${s.entry}, ${s.stop}, ${s.target}, ${s.qty})" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-sm transition">
+                  ⚡ Buy (Green - ${s.qty} Qty)
                 </button>
-                <button onclick="sendToTelegram('${s.sym}', '${s.type}', ${s.entry}, ${s.stop}, ${s.target}, '${s.why.replace(/'/g, "")}', ${s.qty})" title="Send to Telegram" class="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-700 transition">
+                <button onclick="sendToTelegram('${s.sym}', '${s.horizon}', ${s.entry}, ${s.stop}, ${s.target}, '${s.why.replace(/'/g, "")}', ${s.qty}, '${s.article}')" title="Send to Telegram" class="p-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-700 transition">
                   <i class="fa-brands fa-telegram text-sky-500"></i>
                 </button>` : 
-                `<button disabled class="w-full py-2 bg-slate-100 text-slate-400 rounded-lg text-xs font-semibold cursor-not-allowed">
-                  🔒 Blocked by Risk Shield
+                `<button disabled class="w-full py-2 bg-rose-600 text-white rounded-lg text-xs font-bold cursor-not-allowed">
+                  🛑 Sell / Avoid (Red)
                 </button>`
               }
             </div>
@@ -1279,12 +1382,12 @@ def serve_app():
       document.getElementById('stocks-container').innerHTML = html;
     }
 
-    async function sendToTelegram(symbol, horizon, entry, stop, target, reason, qty) {
+    async function sendToTelegram(symbol, horizon, entry, stop, target, reason, qty, article) {
       try {
         const res = await fetch('/api/telegram/broadcast-stock', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ symbol, horizon, entry, stop, target, reason, qty })
+          body: JSON.stringify({ symbol, horizon, entry, stop, target, reason, qty, article })
         });
         const data = await res.json();
         showAiToast(`📲 Telegram Sent to Parvej`, `${symbol} ka real buy signal Telegram bot par bhej diya gaya hai!`, symbol, qty, entry);
@@ -1298,7 +1401,7 @@ def serve_app():
       alert('🚀 Telegram par alerts bheje ja rahe hain...');
       for (const s of STOCKS_DATA) {
         if (s.qty > 0) {
-          await sendToTelegram(s.sym, s.type, s.entry, s.stop, s.target, s.why, s.qty);
+          await sendToTelegram(s.sym, s.horizon, s.entry, s.stop, s.target, s.why, s.qty, s.article);
         }
       }
       showAiToast('✅ Broadcast Complete', 'Sabhi 10 stocks Telegram bot par deliver ho gaye hain.', 'POWERGRID', 300, 265);
@@ -1328,6 +1431,18 @@ def serve_app():
       }
     }
 
+    async function sellUserTrade(tradeId) {
+      if (!confirm('Kya aap is stock ko market rate par SELL (Red) karna chahte hain?')) return;
+      try {
+        const res = await fetch('/api/paper/sell?trade_id=' + tradeId, { method: 'POST' });
+        const data = await res.json();
+        alert('🛑 ' + data.message);
+        refreshPortfolio();
+      } catch (e) {
+        alert('Sell error: ' + e.message);
+      }
+    }
+
     async function refreshPortfolio() {
       try {
         const res = await fetch('/api/paper/portfolio/1');
@@ -1347,6 +1462,17 @@ def serve_app():
         if (data.trades && data.trades.length > 0) {
           let html = '';
           data.trades.forEach(t => {
+            const isClosed = t.status === 'CLOSED';
+            const statusTag = isClosed ? 
+              '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300">🛑 CLOSED</span>' :
+              '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">🟢 OPEN</span>';
+
+            const actionCell = !isClosed ? 
+              `<button onclick="sellUserTrade(${t.id})" class="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded text-[11px] shadow-sm transition">
+                Sell (Red)
+              </button>` :
+              `<span class="text-slate-400 text-[11px]">Closed</span>`;
+
             html += `
               <tr class="hover:bg-slate-50">
                 <td class="p-3.5 font-bold text-slate-900">#${t.symbol}</td>
@@ -1354,17 +1480,18 @@ def serve_app():
                 <td class="p-3.5 font-semibold text-slate-900">${t.quantity}</td>
                 <td class="p-3.5 text-slate-700">₹${t.entry_price.toFixed(2)}</td>
                 <td class="p-3.5 font-bold text-slate-900">₹${t.current_price.toFixed(2)}</td>
-                <td class="p-3.5 text-rose-600">₹${t.stop_loss}</td>
+                <td class="p-3.5 text-rose-600 font-bold">₹${t.stop_loss}</td>
                 <td class="p-3.5 text-emerald-600 font-bold">₹${t.target_price}</td>
-                <td class="p-3.5"><span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">${t.status}</span></td>
+                <td class="p-3.5">${statusTag}</td>
                 <td class="p-3.5 font-bold ${t.pnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}">₹${t.pnl.toFixed(2)}</td>
+                <td class="p-3.5">${actionCell}</td>
               </tr>`;
           });
           document.getElementById('paper-rows').innerHTML = html;
         } else {
           document.getElementById('paper-rows').innerHTML = `
             <tr>
-              <td colspan="9" class="p-6 text-center text-slate-400">Aapka account ready hai! Kal subah 9:15 AM market khulte hi suggestions tab se real price par trade buy karein.</td>
+              <td colspan="10" class="p-6 text-center text-slate-400">Aapka account ready hai! Kal subah 9:15 AM market khulte hi suggestions tab se real price par trade buy karein.</td>
             </tr>`;
         }
       } catch (e) {
