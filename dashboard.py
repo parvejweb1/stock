@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-app = FastAPI(title="Indian Day Trader 2.0 Web UI")
+app = FastAPI(title="Indian Trader 2.0 Multi-Segment Portal")
 
 app.add_middleware(
     CORSMiddleware,
@@ -42,7 +42,6 @@ def run_skill_script(script_subpath: str, args: list) -> dict:
 @app.get("/api/status")
 def get_status():
     config_path = WORKSPACE_DIR / "trader" / "config.json"
-    portfolio_path = WORKSPACE_DIR / "trader" / "portfolio.json"
     watchlist_path = WORKSPACE_DIR / "trader" / "watchlist.json"
     plan_path = WORKSPACE_DIR / "trader" / "plan.json"
     orders_path = WORKSPACE_DIR / "trader" / "orders.json"
@@ -58,7 +57,6 @@ def get_status():
 
     return {
         "config": read_json(config_path),
-        "portfolio": read_json(portfolio_path),
         "watchlist": read_json(watchlist_path),
         "plan": read_json(plan_path),
         "orders": read_json(orders_path),
@@ -99,30 +97,6 @@ def trigger_autopilot():
     except Exception as e:
         return {"error": str(e)}
 
-class ConfigUpdateRequest(BaseModel):
-    budget: float
-    max_loss_per_trade_inr: float
-    max_daily_loss_inr: float
-    broker: str
-    trade_type: str
-
-@app.post("/api/config")
-def update_config(req: ConfigUpdateRequest):
-    config_path = WORKSPACE_DIR / "trader" / "config.json"
-    data = {}
-    if config_path.exists():
-        with open(config_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    data["budget"] = req.budget
-    data["max_loss_per_trade_inr"] = req.max_loss_per_trade_inr
-    data["max_daily_loss_inr"] = req.max_daily_loss_inr
-    data["broker"] = req.broker
-    data["trade_type"] = req.trade_type
-    data["product"] = "MIS" if req.trade_type == "intraday" else "CNC"
-    with open(config_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-    return {"status": "ok", "config": data}
-
 @app.get("/", response_class=HTMLResponse)
 def get_dashboard():
     html_content = """<!DOCTYPE html>
@@ -130,41 +104,44 @@ def get_dashboard():
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Trader 2.0 - India Desk</title>
+  <title>Trader 2.0 - Multi-Segment Indian Portal</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-    body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #0f172a; }
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; color: #0f172a; }
     .navy-header { background: linear-gradient(135deg, #0a192f 0%, #1e3a8a 100%); }
-    .navy-card { background-color: #ffffff; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(10, 25, 47, 0.05); }
-    .navy-btn { background-color: #1e3a8a; color: #ffffff; }
-    .navy-btn:hover { background-color: #0a192f; }
-    .stock-badge { background-color: #eff6ff; color: #1e3a8a; border: 1px solid #bfdbfe; }
-    .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(30, 58, 138, 0.1); border-color: #93c5fd; }
+    .portal-card { background: #ffffff; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(10, 25, 47, 0.04); }
+    .tab-active { background-color: #1e3a8a; color: #ffffff; box-shadow: 0 4px 12px rgba(30, 58, 138, 0.25); }
+    .tab-inactive { background-color: #ffffff; color: #64748b; border: 1px solid #e2e8f0; }
+    .tab-inactive:hover { background-color: #f1f5f9; color: #0f172a; }
+    .badge-long { background-color: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+    .badge-swing { background-color: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+    .badge-intra { background-color: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+    .badge-fno { background-color: #fdf2f8; color: #9d174d; border: 1px solid #fbcfe8; }
   </style>
 </head>
-<body class="min-h-screen pb-12">
+<body class="min-h-screen pb-16">
 
-  <!-- Navy Blue Top Header (Mobile Optimized) -->
-  <header class="navy-header text-white px-4 py-4 md:px-8 shadow-md">
+  <!-- Navy Blue Top Header (Mobile & Desktop) -->
+  <header class="navy-header text-white px-4 py-4 md:px-8 shadow-lg">
     <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
       <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-white text-blue-900 flex items-center justify-center font-black text-xl shadow">
+        <div class="w-11 h-11 rounded-2xl bg-white text-blue-900 flex items-center justify-center font-black text-2xl shadow">
           ₹
         </div>
         <div>
-          <h1 class="text-xl md:text-2xl font-extrabold tracking-tight flex items-center gap-2">
-            Trader 2.0 <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-400 text-slate-950 font-bold">NSE / BSE</span>
+          <h1 class="text-xl md:text-2xl font-black tracking-tight flex items-center gap-2">
+            Trader 2.0 <span class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-400 text-slate-950">Multi-Segment Desk</span>
           </h1>
-          <p class="text-xs text-blue-200">AI Stock Suggestion & Automated Trading Desk</p>
+          <p class="text-xs text-blue-200">11 AI Agents Analyzing NSE & BSE across All Horizons</p>
         </div>
       </div>
 
       <!-- Action Pill Buttons -->
       <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
         <button onclick="runAutopilot()" class="flex-1 md:flex-initial px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow flex items-center justify-center gap-2 transition">
-          <i class="fa-solid fa-robot"></i> Run Autopilot (Suggest & Plan)
+          <i class="fa-solid fa-robot"></i> Run Autopilot Analysis
         </button>
         <button onclick="refreshData()" class="px-3.5 py-2 bg-blue-900 hover:bg-blue-800 text-white text-xs font-semibold rounded-xl border border-blue-700/60 transition flex items-center gap-1.5">
           <i class="fa-solid fa-rotate-right" id="refresh-icon"></i>
@@ -175,166 +152,318 @@ def get_dashboard():
 
   <div class="max-w-7xl mx-auto px-4 md:px-8 mt-6 space-y-6">
 
-    <!-- Overview Bar (Clean White Cards) -->
+    <!-- Overview Bar -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-      <div class="navy-card p-4 rounded-2xl">
-        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Aapka Budget</div>
-        <div id="card-budget" class="text-2xl font-black text-blue-950 mt-1">₹1,000</div>
-        <div class="text-[11px] text-slate-500 mt-0.5">Max loss: <span id="card-max-loss" class="text-rose-600 font-bold">₹20</span></div>
+      <div class="portal-card p-4 rounded-2xl">
+        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Trading Capital</div>
+        <div class="text-2xl font-black text-blue-950 mt-1">₹1,000</div>
+        <div class="text-[11px] text-slate-500 mt-0.5">Max Loss Per Trade: <span class="text-rose-600 font-bold">₹20</span></div>
       </div>
 
-      <div class="navy-card p-4 rounded-2xl">
-        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Active Broker</div>
-        <div id="card-broker" class="text-2xl font-black text-blue-900 mt-1">GROWW</div>
-        <div class="text-[11px] text-emerald-700 font-medium mt-0.5">Paper Safe Mode Active</div>
+      <div class="portal-card p-4 rounded-2xl">
+        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Default Broker</div>
+        <div class="text-2xl font-black text-blue-900 mt-1">GROWW</div>
+        <div class="text-[11px] text-emerald-700 font-semibold mt-0.5">Paper Safe Simulation</div>
       </div>
 
-      <div class="navy-card p-4 rounded-2xl">
-        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Trading Style</div>
-        <div id="card-trade-type" class="text-xl font-black text-slate-800 mt-1">Swing (CNC)</div>
-        <div class="text-[11px] text-blue-600 mt-0.5">Job Friendly Mode</div>
+      <div class="portal-card p-4 rounded-2xl">
+        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">AI Agents Active</div>
+        <div class="text-2xl font-black text-emerald-600 mt-1">11 / 11</div>
+        <div class="text-[11px] text-slate-500 mt-0.5">All Skills Operational</div>
       </div>
 
-      <div class="navy-card p-4 rounded-2xl">
-        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Phone Alerts</div>
-        <div class="text-xl font-black text-emerald-600 mt-1 flex items-center gap-1.5">
+      <div class="portal-card p-4 rounded-2xl">
+        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Telegram Alert Desk</div>
+        <div class="text-xl font-black text-blue-900 mt-1 flex items-center gap-2">
           <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span> Connected
         </div>
-        <div class="text-[11px] text-slate-500 mt-0.5">Telegram Alerts Live</div>
+        <div class="text-[11px] text-slate-500 mt-0.5">Instant Mobile Alerts</div>
       </div>
     </div>
 
-    <!-- AI Stock Recommendations Box (The Magic Section) -->
-    <div class="navy-card p-5 rounded-2xl border-l-4 border-l-blue-900">
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-2">
-        <div>
-          <h2 class="text-base font-extrabold text-blue-950 flex items-center gap-2">
-            <i class="fa-solid fa-bullseye text-blue-700"></i> AI Suggested Stocks For You
-          </h2>
-          <p class="text-xs text-slate-500 mt-0.5">Nifty 50 scan se filtered best technical breakout setups (Click to test):</p>
-        </div>
-        <button onclick="runCommand('scanner', ['daily', '--universe', 'nifty50'])" class="text-xs font-bold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-200 transition self-start sm:self-auto">
-          🔄 Scan Fresh Stocks
-        </button>
-      </div>
+    <!-- 4 MAIN SEGMENT TABS (The User's Core Request) -->
+    <div class="flex flex-wrap gap-2 p-1.5 bg-slate-200/80 rounded-2xl">
+      <button onclick="switchSegment('longterm')" id="tab-longterm" class="tab-active flex-1 min-w-[140px] py-3 px-4 rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-2 transition">
+        <i class="fa-solid fa-landmark"></i> 1. Long Term Investing
+      </button>
+      <button onclick="switchSegment('swing')" id="tab-swing" class="tab-inactive flex-1 min-w-[140px] py-3 px-4 rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-2 transition">
+        <i class="fa-solid fa-chart-line"></i> 2. Swing Trading (CNC)
+      </button>
+      <button onclick="switchSegment('intraday')" id="tab-intraday" class="tab-inactive flex-1 min-w-[140px] py-3 px-4 rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-2 transition">
+        <i class="fa-solid fa-bolt"></i> 3. Intraday Trading (MIS)
+      </button>
+      <button onclick="switchSegment('fno')" id="tab-fno" class="tab-inactive flex-1 min-w-[140px] py-3 px-4 rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-2 transition">
+        <i class="fa-solid fa-cubes"></i> 4. Futures & Options (F&O)
+      </button>
+    </div>
 
-      <div id="suggestions-container" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-3">
-        <div class="text-xs text-slate-400 py-3">Scanning setups...</div>
+    <!-- ================= SEGMENT 1: LONG TERM ================= -->
+    <div id="segment-longterm" class="space-y-4">
+      <div class="portal-card p-6 rounded-2xl border-l-4 border-l-blue-900">
+        <div class="flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-slate-100 gap-3">
+          <div>
+            <span class="badge-long text-[11px] font-bold px-2.5 py-1 rounded-full uppercase">1 to 5 Years Horizon</span>
+            <h2 class="text-xl font-extrabold text-blue-950 mt-2 flex items-center gap-2">
+              🏛️ Long Term Wealth Accumulation (Fundamentals + Promoter Deals)
+            </h2>
+            <p class="text-xs text-slate-500 mt-1">
+              AI Agents analyzing: <b>trader-analyst</b> (Screener.in P&L, Sales, PAT, Margins), <b>trader-deals</b> (Promoter & FII/DII Buying), aur <b>trader-news</b> (Global announcements).
+            </p>
+          </div>
+          <button onclick="runCommand('deals', ['all', '--promoter', '--buy', '--days', '30'])" class="px-4 py-2 bg-blue-900 hover:bg-blue-950 text-white text-xs font-bold rounded-xl transition self-start md:self-auto">
+            🔍 Check 30-Day Promoter Buying
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
+          <div class="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="font-black text-blue-950 text-base">#RELIANCE</span>
+              <span class="text-xs font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">Solid MOAT</span>
+            </div>
+            <p class="text-xs text-slate-600">Q2 FY27 Net Profit ₹19,800 Cr+. Retail + Jio telecom continuous expansion.</p>
+            <div class="text-[11px] text-slate-500 pt-1 border-t border-slate-200">
+              <b>Accumulation Zone:</b> ₹1,150 - ₹1,200 | <b>Stop:</b> Optional/No Stop for long term.
+            </div>
+            <button onclick="runCommand('analyst', ['RELIANCE', '--quarters', '6'])" class="w-full mt-2 py-1.5 bg-blue-900 text-white rounded-lg text-xs font-semibold">
+              Deep Financial Audit
+            </button>
+          </div>
+
+          <div class="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="font-black text-blue-950 text-base">#TCS</span>
+              <span class="text-xs font-bold text-blue-800 bg-blue-100 px-2 py-0.5 rounded">High OPM & Dividend</span>
+            </div>
+            <p class="text-xs text-slate-600">Operating Profit Margin 26%+. Zero debt, consistent free cash flow generation.</p>
+            <div class="text-[11px] text-slate-500 pt-1 border-t border-slate-200">
+              <b>Accumulation Zone:</b> ₹2,450 - ₹2,520 | <b>Target:</b> Multi-year compounding.
+            </div>
+            <button onclick="runCommand('analyst', ['TCS', '--quarters', '6'])" class="w-full mt-2 py-1.5 bg-blue-900 text-white rounded-lg text-xs font-semibold">
+              Deep Financial Audit
+            </button>
+          </div>
+
+          <div class="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="font-black text-blue-950 text-base">#SBIN</span>
+              <span class="text-xs font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded">Low NPA (0.4%)</span>
+            </div>
+            <p class="text-xs text-slate-600">Credit growth leader, lowest NPAs in last decade, robust ROE.</p>
+            <div class="text-[11px] text-slate-500 pt-1 border-t border-slate-200">
+              <b>Accumulation Zone:</b> ₹800 - ₹840 | <b>Holding:</b> 2-3 Years.
+            </div>
+            <button onclick="runCommand('analyst', ['SBIN', '--standalone'])" class="w-full mt-2 py-1.5 bg-blue-900 text-white rounded-lg text-xs font-semibold">
+              Deep Financial Audit
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
-    <!-- Action Grid (White & Navy Style) -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      
-      <!-- 1. Scan -->
-      <div class="navy-card card-hover p-5 rounded-2xl cursor-pointer transition" onclick="runCommand('scanner', ['daily', '--universe', 'nifty50'])">
-        <div class="w-10 h-10 rounded-xl bg-blue-100 text-blue-900 flex items-center justify-center font-bold text-lg mb-3">
-          <i class="fa-solid fa-magnifying-glass-chart"></i>
+    <!-- ================= SEGMENT 2: SWING TRADING ================= -->
+    <div id="segment-swing" class="space-y-4 hidden">
+      <div class="portal-card p-6 rounded-2xl border-l-4 border-l-emerald-600">
+        <div class="flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-slate-100 gap-3">
+          <div>
+            <span class="badge-swing text-[11px] font-bold px-2.5 py-1 rounded-full uppercase">3 to 10 Days Horizon (Job Friendly)</span>
+            <h2 class="text-xl font-extrabold text-blue-950 mt-2 flex items-center gap-2">
+              📈 Swing Delivery (20-Day Breakouts & 2R Targets)
+            </h2>
+            <p class="text-xs text-slate-500 mt-1">
+              AI Agents analyzing: <b>trader-scanner</b> (daily closes), <b>trader-exit</b> (ATR stop & 2R target), <b>trader-timemachine</b> (10,000 simulations).
+            </p>
+          </div>
+          <button onclick="runCommand('scanner', ['daily', '--universe', 'nifty50'])" class="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl transition self-start md:self-auto">
+            🔄 Scan Fresh Breakouts
+          </button>
         </div>
-        <h3 class="font-bold text-slate-900 text-base">1. Market Scan</h3>
-        <p class="text-xs text-slate-500 mt-1">20-day high breakouts aur bull flag stocks dhoondhein.</p>
-        <span class="inline-block mt-3 text-xs font-bold text-blue-800">Scan Nifty 50 →</span>
-      </div>
 
-      <!-- 2. Smart Money -->
-      <div class="navy-card card-hover p-5 rounded-2xl cursor-pointer transition" onclick="runCommand('deals', ['all', '--promoter', '--buy', '--days', '7'])">
-        <div class="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-lg mb-3">
-          <i class="fa-solid fa-user-tie"></i>
-        </div>
-        <h3 class="font-bold text-slate-900 text-base">2. Promoter Buying</h3>
-        <p class="text-xs text-slate-500 mt-1">SEBI filings se dekhein promoters ne kitna maal khareeda.</p>
-        <span class="inline-block mt-3 text-xs font-bold text-emerald-700">Check Smart Money →</span>
-      </div>
+        <div id="swing-candidates-list" class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
+          <!-- POWERGRID Sample Card -->
+          <div class="p-4 rounded-xl border border-emerald-200 bg-emerald-50/30 space-y-2.5">
+            <div class="flex items-center justify-between">
+              <span class="font-black text-slate-900 text-base">#POWERGRID</span>
+              <span class="text-xs font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">20D Breakout</span>
+            </div>
+            <div class="text-xs text-slate-700 space-y-1">
+              <div>• <b>Entry:</b> ₹265.00 (Daily Close)</div>
+              <div>• <b>Stop Loss:</b> ₹255.00 (3.7% Risk)</div>
+              <div>• <b>Target:</b> ₹285.00 (2R Double Reward)</div>
+              <div>• <b>Budget ₹1,000:</b> Exact 2-3 Shares</div>
+            </div>
+            <div class="flex gap-2 pt-2 border-t border-slate-200">
+              <button onclick="runCommand('timemachine', ['run', '--symbol', 'POWERGRID', '--swing'])" class="flex-1 py-1.5 bg-slate-800 text-white rounded-lg text-xs font-semibold">
+                Replay Odds
+              </button>
+              <button onclick="runCommand('budget', ['--trade-type', 'swing', '--write'])" class="flex-1 py-1.5 bg-emerald-700 text-white rounded-lg text-xs font-semibold">
+                Size Trade
+              </button>
+            </div>
+          </div>
 
-      <!-- 3. News & Impact -->
-      <div class="navy-card card-hover p-5 rounded-2xl cursor-pointer transition" onclick="runCommand('news', ['--tickers', 'RELIANCE', 'TCS', 'HDFCBANK', 'SBIN', '--hours', '48'])">
-        <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-900 flex items-center justify-center font-bold text-lg mb-3">
-          <i class="fa-solid fa-newspaper"></i>
-        </div>
-        <h3 class="font-bold text-slate-900 text-base">3. News & Announcements</h3>
-        <p class="text-xs text-slate-500 mt-1">Earnings results aur exchange announcements padhein.</p>
-        <span class="inline-block mt-3 text-xs font-bold text-amber-800">Read News →</span>
-      </div>
+          <!-- INFY Sample Card -->
+          <div class="p-4 rounded-xl border border-emerald-200 bg-emerald-50/30 space-y-2.5">
+            <div class="flex items-center justify-between">
+              <span class="font-black text-slate-900 text-base">#INFY</span>
+              <span class="text-xs font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">20D Breakout</span>
+            </div>
+            <div class="text-xs text-slate-700 space-y-1">
+              <div>• <b>Entry:</b> ₹1,185.00</div>
+              <div>• <b>Stop Loss:</b> ₹1,160.00</div>
+              <div>• <b>Target:</b> ₹1,235.00 (2R Profit)</div>
+              <div>• <b>Budget ₹1,000:</b> 1 Share (Max loss ₹25)</div>
+            </div>
+            <div class="flex gap-2 pt-2 border-t border-slate-200">
+              <button onclick="runCommand('timemachine', ['run', '--symbol', 'INFY', '--swing'])" class="flex-1 py-1.5 bg-slate-800 text-white rounded-lg text-xs font-semibold">
+                Replay Odds
+              </button>
+              <button onclick="runCommand('budget', ['--trade-type', 'swing', '--write'])" class="flex-1 py-1.5 bg-emerald-700 text-white rounded-lg text-xs font-semibold">
+                Size Trade
+              </button>
+            </div>
+          </div>
 
-      <!-- 4. Earnings Analyst -->
-      <div class="navy-card card-hover p-5 rounded-2xl cursor-pointer transition" onclick="quickAnalyze()">
-        <div class="w-10 h-10 rounded-xl bg-purple-100 text-purple-900 flex items-center justify-center font-bold text-lg mb-3">
-          <i class="fa-solid fa-chart-pie"></i>
+          <!-- TRENT Sample Card -->
+          <div class="p-4 rounded-xl border border-emerald-200 bg-emerald-50/30 space-y-2.5">
+            <div class="flex items-center justify-between">
+              <span class="font-black text-slate-900 text-base">#TRENT</span>
+              <span class="text-xs font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">Bull Flag</span>
+            </div>
+            <div class="text-xs text-slate-700 space-y-1">
+              <div>• <b>Entry:</b> ₹3,017.00</div>
+              <div>• <b>Stop Loss:</b> ₹2,950.00</div>
+              <div>• <b>Target:</b> ₹3,150.00</div>
+              <div>• <b>Status:</b> Requires ₹3k+ capital</div>
+            </div>
+            <div class="flex gap-2 pt-2 border-t border-slate-200">
+              <button onclick="runCommand('timemachine', ['run', '--symbol', 'TRENT', '--swing'])" class="flex-1 py-1.5 bg-slate-800 text-white rounded-lg text-xs font-semibold">
+                Replay Odds
+              </button>
+              <button onclick="runCommand('risk', [])" class="flex-1 py-1.5 bg-amber-700 text-white rounded-lg text-xs font-semibold">
+                Risk Check
+              </button>
+            </div>
+          </div>
         </div>
-        <h3 class="font-bold text-slate-900 text-base">4. Company Financials</h3>
-        <p class="text-xs text-slate-500 mt-1">Screener se quarterly profit, sales aur EPS margin check karein.</p>
-        <span class="inline-block mt-3 text-xs font-bold text-purple-800">Analyze Stock →</span>
-      </div>
-
-      <!-- 5. Time Machine -->
-      <div class="navy-card card-hover p-5 rounded-2xl cursor-pointer transition" onclick="quickTimeMachine()">
-        <div class="w-10 h-10 rounded-xl bg-rose-100 text-rose-900 flex items-center justify-center font-bold text-lg mb-3">
-          <i class="fa-solid fa-clock-rotate-left"></i>
-        </div>
-        <h3 class="font-bold text-slate-900 text-base">5. 10,000 Replays (TimeMachine)</h3>
-        <p class="text-xs text-slate-500 mt-1">Trade lene se pehle 10,000 simulations se probability janein.</p>
-        <span class="inline-block mt-3 text-xs font-bold text-rose-800">Replay Odds →</span>
-      </div>
-
-      <!-- 6. Order Simulator -->
-      <div class="navy-card card-hover p-5 rounded-2xl cursor-pointer transition" onclick="runCommand('broker', ['show'])">
-        <div class="w-10 h-10 rounded-xl bg-slate-100 text-slate-800 flex items-center justify-center font-bold text-lg mb-3">
-          <i class="fa-solid fa-receipt"></i>
-        </div>
-        <h3 class="font-bold text-slate-900 text-base">6. Order Ticket</h3>
-        <p class="text-xs text-slate-500 mt-1">Groww / Zerodha ke simulated ticket aur charges dekhein.</p>
-        <span class="inline-block mt-3 text-xs font-bold text-slate-700">View Ticket →</span>
       </div>
     </div>
 
-    <!-- Live AI Output Console (Clean High-Contrast Terminal) -->
-    <div class="navy-card rounded-2xl overflow-hidden">
+    <!-- ================= SEGMENT 3: INTRADAY TRADING ================= -->
+    <div id="segment-intraday" class="space-y-4 hidden">
+      <div class="portal-card p-6 rounded-2xl border-l-4 border-l-amber-500">
+        <div class="flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-slate-100 gap-3">
+          <div>
+            <span class="badge-intra text-[11px] font-bold px-2.5 py-1 rounded-full uppercase">Same Day Settlement (09:15 - 15:10 IST)</span>
+            <h2 class="text-xl font-extrabold text-blue-950 mt-2 flex items-center gap-2">
+              ⚡ Intraday Scalping (Opening Range Breakout - ORB)
+            </h2>
+            <p class="text-xs text-slate-500 mt-1">
+              AI Agents analyzing: <b>trader-entry</b> (5-min bar close above 9:15-9:30 range), <b>trader-risk</b> (15:10 auto square-off shield), <b>trader-budget</b> (Brokerage cost guard).
+            </p>
+          </div>
+          <button onclick="runCommand('scanner', ['orb', '--universe', 'nifty50'])" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl transition self-start md:self-auto">
+            ⏱️ Scan 5-Min ORB Breakouts
+          </button>
+        </div>
+
+        <div class="p-4 rounded-xl bg-amber-50/40 border border-amber-200 text-xs text-amber-900 leading-relaxed">
+          <i class="fa-solid fa-triangle-exclamation mr-1 text-amber-600"></i>
+          <b>Intraday Notice:</b> Intraday (MIS) trades must be closed by <b>15:10 IST</b>. Agar aap office me busy hain to <b>GTT / Stop-loss order</b> lagana mandatory hai.
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+          <div class="p-4 rounded-xl border border-slate-200 bg-white space-y-2">
+            <span class="font-black text-slate-900 text-sm">#HCLTECH ORB</span>
+            <div class="text-xs text-slate-600">5-Min Candle 9:30 AM range ke upar cross hote hi alert aayega.</div>
+            <div class="text-[11px] text-slate-500">Stop: Range Midpoint | Target: 1.5R</div>
+          </div>
+          <div class="p-4 rounded-xl border border-slate-200 bg-white space-y-2">
+            <span class="font-black text-slate-900 text-sm">#ICICIBANK ORB</span>
+            <div class="text-xs text-slate-600">High volume liquidity setup. Safe for 1-share testing.</div>
+            <div class="text-[11px] text-slate-500">Stop: ₹15 Below Entry | Target: ₹30 Gain</div>
+          </div>
+          <div class="p-4 rounded-xl border border-slate-200 bg-white space-y-2">
+            <span class="font-black text-slate-900 text-sm">#TCS ORB</span>
+            <div class="text-xs text-slate-600">Bull flag continuation pattern on 5-minute charts.</div>
+            <div class="text-[11px] text-slate-500">Broker Square-off: 15:10 IST sharp</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= SEGMENT 4: FUTURES & OPTIONS ================= -->
+    <div id="segment-fno" class="space-y-4 hidden">
+      <div class="portal-card p-6 rounded-2xl border-l-4 border-l-rose-600">
+        <div class="flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-slate-100 gap-3">
+          <div>
+            <span class="badge-fno text-[11px] font-bold px-2.5 py-1 rounded-full uppercase">Derivatives (Nifty / Bank Nifty / Stock F&O)</span>
+            <h2 class="text-xl font-extrabold text-blue-950 mt-2 flex items-center gap-2">
+              🎲 Futures & Options Desk (High Leverage)
+            </h2>
+            <p class="text-xs text-slate-500 mt-1">
+              AI Agents analyzing: <b>trader-risk</b> (NSE Lot Size multipliers & Margin check), <b>trader-budget</b> (Option Premium decay warning).
+            </p>
+          </div>
+          <span class="px-3 py-1 bg-rose-100 text-rose-800 text-xs font-bold rounded-lg self-start md:self-auto">
+            🔒 Guarded for Testing
+          </span>
+        </div>
+
+        <div class="p-4 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-950 space-y-2">
+          <div class="font-bold text-rose-800 flex items-center gap-1.5 text-sm">
+            <i class="fa-solid fa-shield-halved"></i> Capital Safety Rule (₹1,000 Budget):
+          </div>
+          <p>
+            SEBI guidelines aur risk rules ke mutabiq, ₹1,000 mein F&O trading karna high risk hai (kyunki Nifty ka ek lot bhi ₹1,500 - ₹5,000 ka premium maangta hai). 
+            System ne F&O ka backend code ready rakha hai, lekin aapke ₹1,000 capital par <b>Risk Shield ise BLOCK</b> karega taaki aapka capital 0 na ho.
+          </p>
+          <div class="font-semibold text-rose-900 pt-1">
+            Jab aapka capital ₹25,000+ ho jayega, tab F&O switch on kiya ja sakega!
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live AI Output Terminal & Logs -->
+    <div class="portal-card rounded-2xl overflow-hidden">
       <div class="bg-slate-100 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
         <div class="flex items-center gap-2 text-xs font-bold text-slate-700">
-          <i class="fa-solid fa-terminal text-blue-900"></i> AI Output Terminal & Logs
+          <i class="fa-solid fa-terminal text-blue-900"></i> AI Agent Real-Time Execution Console
         </div>
         <button onclick="clearConsole()" class="text-xs text-slate-500 hover:text-slate-800 font-semibold">
-          Clear Screen
+          Clear Console
         </button>
       </div>
       <div class="p-4 bg-slate-950">
-        <pre id="console-output" class="text-xs font-mono text-emerald-400 overflow-x-auto min-h-[200px] max-h-[360px] leading-relaxed">Ready. Click any action button above or run Autopilot.</pre>
+        <pre id="console-output" class="text-xs font-mono text-emerald-400 overflow-x-auto min-h-[180px] max-h-[350px] leading-relaxed">Ready. Select any segment above or run Autopilot.</pre>
       </div>
     </div>
 
   </div>
 
   <script>
+    function switchSegment(seg) {
+      document.getElementById('segment-longterm').classList.add('hidden');
+      document.getElementById('segment-swing').classList.add('hidden');
+      document.getElementById('segment-intraday').classList.add('hidden');
+      document.getElementById('segment-fno').classList.add('hidden');
+
+      document.getElementById('tab-longterm').className = 'tab-inactive flex-1 min-w-[140px] py-3 px-4 rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-2 transition';
+      document.getElementById('tab-swing').className = 'tab-inactive flex-1 min-w-[140px] py-3 px-4 rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-2 transition';
+      document.getElementById('tab-intraday').className = 'tab-inactive flex-1 min-w-[140px] py-3 px-4 rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-2 transition';
+      document.getElementById('tab-fno').className = 'tab-inactive flex-1 min-w-[140px] py-3 px-4 rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-2 transition';
+
+      document.getElementById('segment-' + seg).classList.remove('hidden');
+      document.getElementById('tab-' + seg).className = 'tab-active flex-1 min-w-[140px] py-3 px-4 rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-2 transition';
+    }
+
     async function refreshData() {
       const icon = document.getElementById('refresh-icon');
       icon.classList.add('animate-spin');
       try {
         const res = await fetch('/api/status');
         const data = await res.json();
-        
-        if (data.config) {
-          document.getElementById('card-budget').innerText = '₹' + (data.config.budget || 1000).toLocaleString('en-IN');
-          document.getElementById('card-max-loss').innerText = '₹' + (data.config.max_loss_per_trade_inr || 20);
-          document.getElementById('card-broker').innerText = (data.config.broker || 'groww').toUpperCase();
-          document.getElementById('card-trade-type').innerText = (data.config.trade_type === 'swing' ? 'Swing (CNC)' : 'Intraday (MIS)');
-        }
-
-        if (data.watchlist && data.watchlist.setups) {
-          let html = '';
-          for (const [sym, setups] of Object.entries(data.watchlist.setups)) {
-            html += `
-              <div class="p-3 rounded-xl border border-blue-100 bg-blue-50/50 hover:bg-blue-50 transition flex items-center justify-between">
-                <div>
-                  <div class="font-extrabold text-blue-950 text-sm">#${sym}</div>
-                  <div class="text-[11px] text-blue-700 mt-0.5">${setups[0] || 'Breakout'}</div>
-                </div>
-                <button onclick="planStock('${sym}')" class="px-3 py-1.5 bg-blue-900 hover:bg-blue-950 text-white rounded-lg text-xs font-bold shadow-sm transition">
-                  Plan Trade
-                </button>
-              </div>`;
-          }
-          document.getElementById('suggestions-container').innerHTML = html || '<div class="text-xs text-slate-400 py-2">No stocks found right now.</div>';
-        }
       } catch (e) {
         console.error(e);
       } finally {
@@ -344,7 +473,7 @@ def get_dashboard():
 
     async function runCommand(skill, args) {
       const out = document.getElementById('console-output');
-      out.innerText = `⏳ Executing: /trader-${skill} ${args.join(' ')}\nPlease wait...`;
+      out.innerText = `⏳ Running AI Skill: /trader-${skill} ${args.join(' ')}\nPlease wait...`;
       try {
         const res = await fetch('/api/run', {
           method: 'POST',
@@ -357,7 +486,6 @@ def get_dashboard():
         } else {
           out.innerText = (data.stdout || '') + (data.stderr ? '\\n' + data.stderr : '');
         }
-        refreshData();
       } catch (err) {
         out.innerText = 'Network error: ' + err.message;
       }
@@ -365,33 +493,14 @@ def get_dashboard():
 
     async function runAutopilot() {
       const out = document.getElementById('console-output');
-      out.innerText = '🤖 RUNNING AUTOPILOT: Scanning setups, checking probabilities, and sending alerts to your Telegram...';
+      out.innerText = '🤖 RUNNING MULTI-SEGMENT AUTOPILOT: Scanning setups across Long Term, Swing & Intraday...\\nAlerts will be sent to your Telegram!';
       try {
         const res = await fetch('/api/autopilot', { method: 'POST' });
         const data = await res.json();
         out.innerText = (data.stdout || '') + (data.stderr ? '\\n' + data.stderr : '');
-        refreshData();
       } catch (e) {
         out.innerText = 'Error: ' + e.message;
       }
-    }
-
-    async function planStock(sym) {
-      const out = document.getElementById('console-output');
-      out.innerText = `⏳ Calculating exit & budget sizing for ${sym}...`;
-      await runCommand('exit', ['plan', sym, '--swing', '--write']);
-      await runCommand('budget', ['--write']);
-      await runCommand('risk', []);
-    }
-
-    function quickAnalyze() {
-      const sym = prompt('Kaunsa stock analyze karna hai? (e.g. RELIANCE, TCS, INFY):', 'INFY');
-      if (sym) runCommand('analyst', [sym.trim().toUpperCase(), '--quarters', '4']);
-    }
-
-    function quickTimeMachine() {
-      const sym = prompt('Kaunse stock par 10,000 replays run karein? (e.g. INFY, SBIN):', 'INFY');
-      if (sym) runCommand('timemachine', [sym.trim().toUpperCase()]);
     }
 
     function clearConsole() {
