@@ -1096,12 +1096,14 @@ def serve_app():
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
           
           <!-- POWERGRID -->
-          <div class="border border-slate-200 rounded-xl p-4 bg-white hover:border-emerald-500 transition flex flex-col justify-between space-y-3">
+          <div class="border border-slate-200 rounded-xl p-4 bg-white hover:border-emerald-500 transition flex flex-col justify-between space-y-3 cursor-pointer shadow-sm hover:shadow-md" onclick="openStockChatModal('POWERGRID', 'Power Transmission PSU', 265, 255, 285, 300)">
             <div class="flex items-start justify-between">
               <div class="flex items-center gap-3">
                 <div class="stock-logo bg-amber-50 text-amber-700 border border-amber-200">⚡</div>
                 <div>
-                  <h3 class="text-sm font-bold text-slate-900">POWERGRID</h3>
+                  <h3 class="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                    POWERGRID <span class="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">💬 Read Agents Chat</span>
+                  </h3>
                   <span class="text-[11px] text-slate-500">Power Transmission PSU</span>
                   <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-extrabold border bg-blue-50 text-blue-700 border-blue-200">
                     ⏳ Swing (1-3 Weeks)
@@ -1119,9 +1121,9 @@ def serve_app():
             </div>
             <div class="text-[11px] text-slate-600 bg-blue-50/60 p-2 rounded border border-blue-100">
               <b>AI Reason:</b> 20-Day high breakout + Promoter buying of ₹35 Cr confirmed.
-              <a href="https://www.screener.in/company/POWERGRID" target="_blank" class="text-blue-600 block mt-1 hover:underline">Read Financial Report ↗</a>
+              <span class="text-blue-600 block mt-1 font-semibold">👆 Card par click karein: 11 AI Agents ki live chat dekhein</span>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2" onclick="event.stopPropagation()">
               <button onclick="quickPaperTrade('POWERGRID', 'Swing', 265, 255, 285, 300)" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-sm transition">
                 ⚡ Buy (300 Qty)
               </button>
@@ -1132,12 +1134,14 @@ def serve_app():
           </div>
 
           <!-- INFY -->
-          <div class="border border-slate-200 rounded-xl p-4 bg-white hover:border-emerald-500 transition flex flex-col justify-between space-y-3">
+          <div class="border border-slate-200 rounded-xl p-4 bg-white hover:border-emerald-500 transition flex flex-col justify-between space-y-3 cursor-pointer shadow-sm hover:shadow-md" onclick="openStockChatModal('INFY', 'Infosys IT Services', 1185, 1160, 1235, 100)">
             <div class="flex items-start justify-between">
               <div class="flex items-center gap-3">
                 <div class="stock-logo bg-blue-50 text-blue-700 border border-blue-200">INF</div>
                 <div>
-                  <h3 class="text-sm font-bold text-slate-900">INFY</h3>
+                  <h3 class="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                    INFY <span class="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">💬 Read Agents Chat</span>
+                  </h3>
                   <span class="text-[11px] text-slate-500">Infosys IT Services</span>
                   <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-extrabold border bg-blue-50 text-blue-700 border-blue-200">
                     ⏳ Swing (1-3 Weeks)
@@ -1155,9 +1159,9 @@ def serve_app():
             </div>
             <div class="text-[11px] text-slate-600 bg-blue-50/60 p-2 rounded border border-blue-100">
               <b>AI Reason:</b> Q2 OPM up 220 bps, major AI enterprise deal signed in Europe.
-              <a href="https://www.screener.in/company/INFY" target="_blank" class="text-blue-600 block mt-1 hover:underline">Read News & Concall ↗</a>
+              <span class="text-blue-600 block mt-1 font-semibold">👆 Card par click karein: 11 AI Agents ki live chat dekhein</span>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2" onclick="event.stopPropagation()">
               <button onclick="quickPaperTrade('INFY', 'Swing', 1185, 1160, 1235, 100)" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-sm transition">
                 ⚡ Buy (100 Qty)
               </button>
@@ -1168,12 +1172,14 @@ def serve_app():
           </div>
 
           <!-- TRENT (AVOID / SELL - RED) -->
-          <div class="border border-rose-200 rounded-xl p-4 bg-rose-50/20 hover:border-rose-400 transition flex flex-col justify-between space-y-3">
+          <div class="border border-rose-200 rounded-xl p-4 bg-rose-50/20 hover:border-rose-400 transition flex flex-col justify-between space-y-3 cursor-pointer shadow-sm hover:shadow-md" onclick="openStockChatModal('TRENT', 'Fashion Retail Chain', 3017, 2950, 3150, 0)">
             <div class="flex items-start justify-between">
               <div class="flex items-center gap-3">
                 <div class="stock-logo bg-rose-50 text-rose-700 border border-rose-200">TRN</div>
                 <div>
-                  <h3 class="text-sm font-bold text-slate-900">TRENT</h3>
+                  <h3 class="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                    TRENT <span class="text-[10px] text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">💬 Read Agents Chat</span>
+                  </h3>
                   <span class="text-[11px] text-slate-500">Fashion Retail Chain</span>
                   <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-extrabold border bg-amber-50 text-amber-700 border-amber-200">
                     ⏳ Intraday (Overbought)
@@ -1191,9 +1197,9 @@ def serve_app():
             </div>
             <div class="text-[11px] text-slate-600 bg-rose-50/60 p-2 rounded border border-rose-200">
               <b>AI Reason:</b> High risk of 5% sudden gap-down. AI strictly recommends retail exit.
-              <a href="https://www.screener.in/company/TRENT" target="_blank" class="text-rose-700 block mt-1 hover:underline">Audit P/E on Screener ↗</a>
+              <span class="text-rose-700 block mt-1 font-semibold">👆 Card par click karein: Kyo avoid karein (Agents logic)</span>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2" onclick="event.stopPropagation()">
               <button disabled class="flex-1 py-2 bg-rose-600 text-white rounded-lg text-xs font-bold shadow-sm opacity-90 cursor-not-allowed">
                 🛑 SELL / AVOID (Red)
               </button>
@@ -1515,6 +1521,51 @@ def serve_app():
     </button>
   </nav>
 
+  <!-- ================= STOCK AGENTS DISCUSSION MODAL ================= -->
+  <div id="stock-chat-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm hidden">
+    <div class="clean-card max-w-xl w-full rounded-2xl shadow-2xl relative bg-white overflow-hidden flex flex-col max-h-[85vh]">
+      <div class="p-4 border-b border-slate-100 flex items-center justify-between navy-brand text-white">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-white/10 text-white flex items-center justify-center text-sm font-bold">
+            💬
+          </div>
+          <div>
+            <h3 class="text-sm font-bold flex items-center gap-2">
+              <span id="modal-stock-title">#POWERGRID</span>
+              <span class="text-[10px] font-normal px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                11 AI Agents Collaborative Room
+              </span>
+            </h3>
+            <p class="text-[10px] text-slate-300">Agents ki aapas ki live conversation + 2nd class kid simple explanation</p>
+          </div>
+        </div>
+        <button onclick="closeStockChatModal()" class="text-slate-300 hover:text-white text-lg">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <!-- Live Chat Messages Inside Modal -->
+      <div id="modal-chat-body" class="p-4 space-y-3.5 overflow-y-auto flex-1 scrollbar-thin bg-slate-50">
+        <!-- Injected dynamically -->
+      </div>
+
+      <!-- Action Footer -->
+      <div class="p-3 bg-white border-t border-slate-200 flex items-center justify-between gap-3 text-xs">
+        <span class="text-slate-500 text-[11px]">
+          🛡️ Risk Rule: Intraday 15:10 PM Square-Off • SL Enforced
+        </span>
+        <div class="flex items-center gap-2">
+          <button onclick="navigateTab('chat'); closeStockChatModal();" class="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold transition">
+            Open Full Chat Room →
+          </button>
+          <button id="modal-buy-action-btn" class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg shadow-sm transition">
+            ⚡ Buy Stock
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ================= AUTH MODAL WITH TELEGRAM OTP ================= -->
   <div id="auth-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm hidden">
     <div class="clean-card max-w-sm w-full p-6 rounded-2xl shadow-xl relative bg-white">
@@ -1755,6 +1806,84 @@ def serve_app():
       }
     }
 
+    async function openStockChatModal(sym, name, entry, stop, target, qty) {
+      document.getElementById('modal-stock-title').innerText = `#${sym} (${name})`;
+      const modal = document.getElementById('stock-chat-modal');
+      modal.classList.remove('hidden');
+      const body = document.getElementById('modal-chat-body');
+      body.innerHTML = `
+        <div class="p-8 text-center text-slate-500 text-xs space-y-2">
+          <i class="fa-solid fa-spinner fa-spin text-2xl text-blue-600"></i>
+          <p class="font-bold text-slate-700">11 AI Agents #${sym} par aapas me live discuss kar rahe hain...</p>
+          <p class="text-[11px] text-slate-400">Entry, Stop Loss aur 2nd-grade simple kid explanation taiyar ho rahi hai...</p>
+        </div>`;
+
+      const buyBtn = document.getElementById('modal-buy-action-btn');
+      if (qty > 0) {
+        buyBtn.className = 'px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg shadow-sm transition';
+        buyBtn.innerText = `⚡ Buy #${sym} (Green - ${qty} Qty)`;
+        buyBtn.onclick = function() {
+          quickPaperTrade(sym, 'Swing', entry, stop, target, qty);
+          closeStockChatModal();
+        };
+      } else {
+        buyBtn.className = 'px-4 py-1.5 bg-rose-600 text-white font-bold rounded-lg cursor-not-allowed opacity-80';
+        buyBtn.innerText = `🛑 AVOID / SELL #${sym} (Red)`;
+        buyBtn.onclick = null;
+      }
+
+      try {
+        // First check existing messages
+        let res = await fetch('/api/agents/chat');
+        let allMsgs = await res.json();
+        let filtered = allMsgs.filter(m => m.stock_symbol === sym);
+
+        // If none exists for this stock, generate discussion automatically
+        if (filtered.length === 0) {
+          await fetch('/api/agents/chat/explain', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ symbol: sym })
+          });
+          const r2 = await fetch('/api/agents/chat');
+          const refreshed = await r2.json();
+          filtered = refreshed.filter(m => m.stock_symbol === sym);
+        }
+
+        if (filtered.length === 0) {
+          body.innerHTML = `<div class="p-6 text-center text-slate-500 text-xs">Koi chat record nahi mila. Kripya punah prayas karein.</div>`;
+          return;
+        }
+
+        let html = '';
+        filtered.forEach(m => {
+          html += `
+            <div class="p-3.5 rounded-xl border border-slate-200 bg-white space-y-2 shadow-sm">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="w-6 h-6 rounded bg-slate-100 flex items-center justify-center text-xs font-bold">${m.avatar}</span>
+                  <span class="text-xs font-bold text-slate-900">${m.agent_name}</span>
+                  <span class="text-[10px] text-slate-500 font-medium">(${m.agent_role})</span>
+                </div>
+                <span class="text-[10px] text-slate-400 font-mono">${m.created_at}</span>
+              </div>
+              <p class="text-xs text-slate-700 leading-relaxed font-sans pl-1">${m.message}</p>
+              <div class="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs font-semibold text-amber-950 flex items-start gap-2">
+                <span class="text-base">💡</span>
+                <div class="leading-snug">${m.simple_explanation}</div>
+              </div>
+            </div>`;
+        });
+        body.innerHTML = html;
+      } catch (e) {
+        body.innerHTML = `<div class="p-6 text-center text-rose-500 text-xs">Chat load karne me samasya: ${e.message}</div>`;
+      }
+    }
+
+    function closeStockChatModal() {
+      document.getElementById('stock-chat-modal').classList.add('hidden');
+    }
+
     async function loadAgentsStatus() {
       try {
         const res = await fetch('/api/agents/status');
@@ -1904,13 +2033,15 @@ def serve_app():
         }
 
         html += `
-          <div class="clean-card rounded-xl p-4 bg-white flex flex-col justify-between space-y-3 ${isBuy ? 'hover:border-emerald-500' : 'hover:border-rose-400 bg-rose-50/10'}">
+          <div class="clean-card rounded-xl p-4 bg-white flex flex-col justify-between space-y-3 ${isBuy ? 'hover:border-emerald-500' : 'hover:border-rose-400 bg-rose-50/10'} cursor-pointer hover:shadow-md transition" onclick="openStockChatModal('${s.sym}', '${s.name}', ${s.entry}, ${s.stop}, ${s.target}, ${s.qty})">
             <div>
               <div class="flex items-start justify-between">
                 <div class="flex items-center gap-3">
                   <div class="stock-logo ${s.logoBg} border">${s.logoText}</div>
                   <div>
-                    <h3 class="text-sm font-bold text-slate-900">#${s.sym}</h3>
+                    <h3 class="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                      #${s.sym} <span class="text-[9px] text-amber-700 bg-amber-50 px-1 py-0.5 rounded border border-amber-200">💬 AI Chat</span>
+                    </h3>
                     <div class="text-[11px] text-slate-500">${s.name}</div>
                     <span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-extrabold border ${horizonBadgeClass}">
                       ⏳ ${horizonLabel}
@@ -1922,7 +2053,10 @@ def serve_app():
               
               <div class="mt-2.5 p-2 bg-slate-50 rounded-lg border border-slate-200/80 text-[11px] text-slate-600">
                 <b>Kyo Buy/Sell Karein (AI Thesis):</b> ${s.why}
-                <a href="${s.article}" target="_blank" class="text-blue-600 font-semibold block mt-1 hover:underline">Supporting News & Report ↗</a>
+                <div class="flex items-center justify-between mt-1.5 pt-1 border-t border-slate-200/60">
+                  <a href="${s.article}" target="_blank" onclick="event.stopPropagation()" class="text-blue-600 font-semibold hover:underline">Financial Report ↗</a>
+                  <span class="text-amber-700 font-bold">👆 Click for Agents Chat</span>
+                </div>
               </div>
             </div>
 
@@ -1932,7 +2066,7 @@ def serve_app():
               <div class="flex justify-between text-slate-600"><span>Target (Munafa):</span> <b class="text-emerald-700 font-bold">₹${s.target}</b></div>
             </div>
 
-            <div class="flex items-center gap-2 pt-1">
+            <div class="flex items-center gap-2 pt-1" onclick="event.stopPropagation()">
               ${isBuy ? 
                 `<button onclick="quickPaperTrade('${s.sym}', '${s.horizon}', ${s.entry}, ${s.stop}, ${s.target}, ${s.qty})" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-sm transition">
                   ⚡ Buy (Green - ${s.qty} Qty)
