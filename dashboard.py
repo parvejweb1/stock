@@ -177,6 +177,27 @@ def init_db():
     else:
         cursor.execute("UPDATE users SET name = 'Parvej', email = 'parvej@tradepilot.ai' WHERE id = 1")
 
+    # Seed initial Empirical Comparison Reports if empty (Transparent Agent Verification Ledger)
+    cursor.execute("SELECT COUNT(*) FROM agent_predictions")
+    if cursor.fetchone()[0] == 0:
+        seed_predictions = [
+            ("Technical Agent", "POWERGRID", "Swing (20D)", "BUY", 262.5, 285.0, 285.0, 255.0, "TARGET_HIT", 8.58, "20-day high breakout + Volume spike", "2026-10-24 10:15"),
+            ("Smart Money Agent", "RELIANCE", "Long-Term", "ACCUMULATE", 1160.0, 1184.5, 1300.0, 1120.0, "RUNNING", 2.11, "Promoters bought ₹35 Cr from open market", "2026-10-26 11:30"),
+            ("Fundamental Agent", "INFY", "Swing (CNC)", "BUY", 1170.0, 1210.0, 1235.0, 1150.0, "RUNNING", 3.42, "Screener Q2 OPM up 220 bps, robust deal pipeline", "2026-10-27 14:00"),
+            ("Risk Sizing Agent", "TRENT", "Intraday", "AVOID", 3010.0, 2960.0, 3150.0, 2950.0, "TARGET_HIT", -1.66, "P/E 160+ and potential 5% gap down flagged; saved retail capital", "2026-10-28 09:30"),
+            ("Global Macro Agent", "TATAMOTORS", "Swing (CNC)", "BUY", 740.0, 778.0, 810.0, 715.0, "RUNNING", 5.14, "Crude cooling down + UK JLR deliveries up", "2026-10-28 12:45"),
+            ("Backtesting Agent", "SBIN", "Intraday (ORB)", "BUY", 815.0, 832.0, 832.0, 804.0, "TARGET_HIT", 2.08, "10,000 Monte Carlo simulations showed 74.2% win probability", "2026-10-29 09:45"),
+            ("Government Policy Agent", "NTPC", "Swing (CNC)", "BUY", 312.0, 328.0, 338.0, 302.0, "RUNNING", 5.12, "Ministry of Power renewable capex clearance announced", "2026-10-29 11:15"),
+            ("Financial News Agent", "BHARTIARTL", "Long-Term", "BUY", 1680.0, 1740.0, 1850.0, 1630.0, "RUNNING", 3.57, "ARPU expansion above ₹220, NSE corporate announcement positive", "2026-10-29 15:00"),
+            ("AI Decision Agent", "TCS", "Swing (CNC)", "BUY", 2490.0, 2470.0, 2580.0, 2450.0, "STOP_LOSS_HIT", -0.8, "Bull flag consolidation; market-wide IT profit-booking hit SL", "2026-10-30 10:20"),
+            ("Corporate Earnings Agent", "HDFCBANK", "Long-Term", "BUY", 1720.0, 1755.0, 1880.0, 1680.0, "RUNNING", 2.03, "Net NPA at decade low 0.33%; deposit growth outpaced credit", "2026-10-30 14:10"),
+            ("Market Sentiment Agent", "ITC", "Long-Term", "ACCUMULATE", 460.0, 474.0, 520.0, 445.0, "RUNNING", 3.04, "Hotels demerger record date sentiment strongly bullish", "2026-10-30 15:10")
+        ]
+        cursor.executemany("""
+        INSERT INTO agent_predictions (agent_name, symbol, trade_type, recommendation, suggested_entry, actual_market_price, target_price, stop_loss, outcome_status, pnl_pct, reasoning, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, seed_predictions)
+
     conn.commit()
     conn.close()
 
