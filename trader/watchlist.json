@@ -1,12 +1,12 @@
 {
   "created_by": "trader-scanner",
-  "created_at": "2026-11-01T13:47:53Z",
-  "now_ist": "2026-11-01 19:17:53 IST",
+  "created_at": "2026-11-02T05:42:30Z",
+  "now_ist": "2026-11-02 11:12:30 IST",
   "exchange": "NSE",
   "mode": "daily",
   "as_of": "2026-10-30 close",
   "universe": 50,
-  "scanned": 45,
+  "scanned": 31,
   "failed": 0,
   "source": "yahoo",
   "filters": {
@@ -23,41 +23,8 @@
       ],
       "price": 1185.0,
       "close_date": "2026-10-30",
-      "rsi": 64.3,
-      "volume": 13029753
-    },
-    {
-      "symbol": "TRENT",
-      "yahoo": "TRENT.NS",
-      "setups": [
-        "breakout_20d"
-      ],
-      "price": 3017.3,
-      "close_date": "2026-10-30",
-      "rsi": 61.9,
-      "volume": 4430525
-    },
-    {
-      "symbol": "ETERNAL",
-      "yahoo": "ETERNAL.NS",
-      "setups": [
-        "breakout_20d"
-      ],
-      "price": 343.65,
-      "close_date": "2026-10-30",
-      "rsi": 62.1,
-      "volume": 38677937
-    },
-    {
-      "symbol": "BSE",
-      "yahoo": "BSE.NS",
-      "setups": [
-        "breakout_20d"
-      ],
-      "price": 3510.4,
-      "close_date": "2026-10-30",
-      "rsi": 61.3,
-      "volume": 2791743
+      "rsi": 64.2,
+      "volume": 4504748
     },
     {
       "symbol": "KOTAKBANK",
@@ -67,30 +34,8 @@
       ],
       "price": 461.6,
       "close_date": "2026-10-30",
-      "rsi": 69.2,
-      "volume": 20730172
-    },
-    {
-      "symbol": "SUNPHARMA",
-      "yahoo": "SUNPHARMA.NS",
-      "setups": [
-        "reclaim_ma20"
-      ],
-      "price": 1777.7,
-      "close_date": "2026-10-30",
-      "rsi": 47.2,
-      "volume": 5125487
-    },
-    {
-      "symbol": "INDIGO",
-      "yahoo": "INDIGO.NS",
-      "setups": [
-        "reclaim_ma20"
-      ],
-      "price": 4877.6,
-      "close_date": "2026-10-30",
-      "rsi": 55.4,
-      "volume": 1646759
+      "rsi": 69.0,
+      "volume": 9502226
     },
     {
       "symbol": "TCS",
@@ -100,8 +45,8 @@
       ],
       "price": 2502.6,
       "close_date": "2026-10-30",
-      "rsi": 66.8,
-      "volume": 3016270
+      "rsi": 66.6,
+      "volume": 1428164
     },
     {
       "symbol": "LT",
@@ -111,8 +56,52 @@
       ],
       "price": 3871.7,
       "close_date": "2026-10-30",
-      "rsi": 61.6,
-      "volume": 1761610
+      "rsi": 61.5,
+      "volume": 845638
+    },
+    {
+      "symbol": "ETERNAL",
+      "yahoo": "ETERNAL.NS",
+      "setups": [
+        "breakout_20d"
+      ],
+      "price": 343.65,
+      "close_date": "2026-10-30",
+      "rsi": 62.2,
+      "volume": 8803994
+    },
+    {
+      "symbol": "SUNPHARMA",
+      "yahoo": "SUNPHARMA.NS",
+      "setups": [
+        "reclaim_ma20"
+      ],
+      "price": 1777.7,
+      "close_date": "2026-10-30",
+      "rsi": 47.4,
+      "volume": 1428730
+    },
+    {
+      "symbol": "BSE",
+      "yahoo": "BSE.NS",
+      "setups": [
+        "breakout_20d"
+      ],
+      "price": 3510.4,
+      "close_date": "2026-10-30",
+      "rsi": 61.2,
+      "volume": 704308
+    },
+    {
+      "symbol": "NTPC",
+      "yahoo": "NTPC.NS",
+      "setups": [
+        "reclaim_ma20"
+      ],
+      "price": 316.25,
+      "close_date": "2026-10-30",
+      "rsi": 52.9,
+      "volume": 6945143
     },
     {
       "symbol": "HCLTECH",
@@ -123,8 +112,30 @@
       ],
       "price": 1428.1,
       "close_date": "2026-10-30",
-      "rsi": 69.6,
-      "volume": 4431428
+      "rsi": 69.5,
+      "volume": 982503
+    },
+    {
+      "symbol": "SHRIRAMFIN",
+      "yahoo": "SHRIRAMFIN.NS",
+      "setups": [
+        "oversold"
+      ],
+      "price": 823.15,
+      "close_date": "2026-10-30",
+      "rsi": 28.6,
+      "volume": 1473852
+    },
+    {
+      "symbol": "DRREDDY",
+      "yahoo": "DRREDDY.NS",
+      "setups": [
+        "breakout_20d"
+      ],
+      "price": 1352.0,
+      "close_date": "2026-10-30",
+      "rsi": 75.5,
+      "volume": 847260
     },
     {
       "symbol": "TECHM",
@@ -135,29 +146,7 @@
       "price": 1790.8,
       "close_date": "2026-10-30",
       "rsi": 65.6,
-      "volume": 3106371
-    },
-    {
-      "symbol": "NTPC",
-      "yahoo": "NTPC.NS",
-      "setups": [
-        "reclaim_ma20"
-      ],
-      "price": 316.25,
-      "close_date": "2026-10-30",
-      "rsi": 53.2,
-      "volume": 15451850
-    },
-    {
-      "symbol": "SHRIRAMFIN",
-      "yahoo": "SHRIRAMFIN.NS",
-      "setups": [
-        "oversold"
-      ],
-      "price": 823.15,
-      "close_date": "2026-10-30",
-      "rsi": 29.0,
-      "volume": 4807922
+      "volume": 580857
     },
     {
       "symbol": "POWERGRID",
@@ -167,52 +156,8 @@
       ],
       "price": 265.0,
       "close_date": "2026-10-30",
-      "rsi": 62.1,
-      "volume": 13684232
-    },
-    {
-      "symbol": "DRREDDY",
-      "yahoo": "DRREDDY.NS",
-      "setups": [
-        "breakout_20d"
-      ],
-      "price": 1352.0,
-      "close_date": "2026-10-30",
-      "rsi": 75.7,
-      "volume": 1713900
-    },
-    {
-      "symbol": "CIPLA",
-      "yahoo": "CIPLA.NS",
-      "setups": [
-        "breakout_20d"
-      ],
-      "price": 1378.9,
-      "close_date": "2026-10-30",
-      "rsi": 59.0,
-      "volume": 1436439
-    },
-    {
-      "symbol": "NESTLEIND",
-      "yahoo": "NESTLEIND.NS",
-      "setups": [
-        "oversold"
-      ],
-      "price": 1167.0,
-      "close_date": "2026-10-30",
-      "rsi": 29.8,
-      "volume": 1669426
-    },
-    {
-      "symbol": "TATACONSUM",
-      "yahoo": "TATACONSUM.NS",
-      "setups": [
-        "breakout_20d"
-      ],
-      "price": 1025.9,
-      "close_date": "2026-10-30",
-      "rsi": 61.2,
-      "volume": 1369118
+      "rsi": 62.0,
+      "volume": 3210320
     }
   ]
 }
