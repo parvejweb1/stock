@@ -1982,22 +1982,18 @@ def serve_app():
 
       const activeM = document.getElementById('nav-m-' + tab);
       if (activeM) {
-        activeM.className = 'flex flex-col items-center gap-1 text-blue-700 font-extrabold text-[10px]';
+        if (tab === 'ai-fund') activeM.className = 'flex flex-col items-center gap-1 text-indigo-700 font-extrabold text-[10px]';
+        else if (tab === 'portfolio') activeM.className = 'flex flex-col items-center gap-1 text-blue-700 font-extrabold text-[10px]';
+        else if (tab === 'technical') activeM.className = 'flex flex-col items-center gap-1 text-blue-700 font-extrabold text-[10px]';
+        else if (tab === 'chat') activeM.className = 'flex flex-col items-center gap-1 text-amber-700 font-extrabold text-[10px]';
+        else if (tab === 'agents') activeM.className = 'flex flex-col items-center gap-1 text-emerald-700 font-extrabold text-[10px]';
+        else activeM.className = 'flex flex-col items-center gap-1 text-slate-900 font-bold text-[10px]';
       }
 
       if (tab === 'technical') {
         const sym = document.getElementById('tech-stock-picker').value || 'POWERGRID';
         loadTechnicalAnalysis(sym);
       }
-    }
-      if (activeM) {
-        if (tab === 'ai-fund') activeM.className = 'flex flex-col items-center gap-1 text-indigo-700 font-extrabold text-[10px]';
-        else if (tab === 'portfolio') activeM.className = 'flex flex-col items-center gap-1 text-blue-700 font-extrabold text-[10px]';
-        else if (tab === 'chat') activeM.className = 'flex flex-col items-center gap-1 text-amber-700 font-extrabold text-[10px]';
-        else if (tab === 'agents') activeM.className = 'flex flex-col items-center gap-1 text-emerald-700 font-extrabold text-[10px]';
-        else activeM.className = 'flex flex-col items-center gap-1 text-slate-900 font-bold text-[10px]';
-      }
-
       if (tab === 'ai-fund') loadAiPortfolio();
       if (tab === 'reports') loadComparisonReports();
       if (tab === 'portfolio') refreshPortfolio();
