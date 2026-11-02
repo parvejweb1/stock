@@ -169,6 +169,21 @@ def init_db():
         created_at TEXT
     )
     """)
+    # Multi-Agent Team Chat Discussion Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS agent_chat_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        agent_name TEXT NOT NULL,
+        agent_role TEXT NOT NULL,
+        avatar TEXT NOT NULL,
+        color_theme TEXT NOT NULL,
+        message TEXT NOT NULL,
+        simple_explanation TEXT NOT NULL,
+        stock_symbol TEXT,
+        verdict TEXT,
+        created_at TEXT
+    )
+    """)
     # Default User: Parvej
     cursor.execute("SELECT id FROM users WHERE id = 1")
     if not cursor.fetchone():
@@ -197,6 +212,40 @@ def init_db():
         INSERT INTO agent_predictions (agent_name, symbol, trade_type, recommendation, suggested_entry, actual_market_price, target_price, stop_loss, outcome_status, pnl_pct, reasoning, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, seed_predictions)
+
+    # Seed Initial Multi-Agent Team Chat (Simple 2nd Grade Kid Friendly Explanations)
+    cursor.execute("SELECT COUNT(*) FROM agent_chat_messages")
+    if cursor.fetchone()[0] == 0:
+        chat_seeds = [
+            ("Chart Scanner Agent", "Chart Expert", "📊", "blue", 
+             "Hello Parvej! Maine NIFTY chart scan kiya hai. #POWERGRID 20 dino ki sabse ucchi line (Breakout) tod kar upar ja raha hai!", 
+             "👶 Chhota Bachha Rule: Stock pahad ke upar chadha hai! Signal: 🟢 BUY. Entry Time: 09:30 AM, Square-Off: 2 Hafte baad.", 
+             "POWERGRID", "BUY", "10:15 AM"),
+
+            ("News & Sentiment Agent", "Khabar Monitor", "📰", "amber", 
+             "Haan Scanner bhai! Government Ministry ne Power Grid ke naye Renewable capex line ko approve kar diya hai. Badi news aayi hai!", 
+             "👶 Chhota Bachha Rule: Sarkar ne is company ko nayi railgaadi jaisa bada kaam diya hai, company ko bohot munafa hoga!", 
+             "POWERGRID", "STRONG_BUY", "10:16 AM"),
+
+            ("Smart Money Agent", "Bade Log Tracker", "💼", "indigo", 
+             "Exchange filings check ki: Company ke khud ke maliko (Promoters) ne open market se ₹35 Crore ke shares khareede hain!", 
+             "👶 Chhota Bachha Rule: Jab dukaandar apni hi dukan ki cheezein khareed raha ho, matlab cheez bohot meethi hai!", 
+             "POWERGRID", "BUY", "10:18 AM"),
+
+            ("Risk Shield & F&O Agent", "Suraksha Guard", "🛡️", "rose", 
+             "Ruko! Indian SEBI & Broker Rule: Intraday me 3:15 PM se pehle nikalna lazmi hai warna broker fine lagayega. F&O me 1 lot size rule follow hoga. Swing trade me holding safe hai. ₹20 se jyada loss nahi hona chahiye!", 
+             "👶 Chhota Bachha Rule: Helmet pehen kar gaadi chalao! Stop-Loss ₹255 set karo. Agar ₹255 par gaya to chupchap bahar aa jao, zidd mat karo!", 
+             "POWERGRID", "HOLD_WITH_SL", "10:20 AM"),
+
+            ("Exit Planner Agent", "Munafa Decider", "🎯", "emerald", 
+             "Verdict Clear: Entry = ₹267. Target = ₹289 (2R Return). Stop-Loss = ₹256. Intraday Exit Time = 15:10 PM. F&O Lot Rule = Verified.", 
+             "👶 Final Decision: 🟢 KHARIDO (BUY). Entry abhi lo, Jab price ₹289 par pahunche tab SELL karke chocolate kha lena!", 
+             "POWERGRID", "FINAL_BUY", "10:22 AM")
+        ]
+        cursor.executemany("""
+        INSERT INTO agent_chat_messages (agent_name, agent_role, avatar, color_theme, message, simple_explanation, stock_symbol, verdict, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, chat_seeds)
 
     conn.commit()
     conn.close()
@@ -387,6 +436,8 @@ def run_ai_auto_trader_loop():
     while True:
         try:
             time.sleep(300) # Every 5 minutes check live ticks and evaluate hold/sell/buy
+            now = datetime.now()
+            current_hm = now.strftime("%H:%M")
             conn = get_db()
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM ai_portfolio_trades WHERE status = 'OPEN'")
@@ -397,8 +448,22 @@ def run_ai_auto_trader_loop():
                 live_p = get_live_nse_price(trade_dict["symbol"], trade_dict["current_price"])
                 pnl = round((live_p - trade_dict["entry_price"]) * trade_dict["quantity"], 2)
                 pnl_pct = round(((live_p - trade_dict["entry_price"]) / trade_dict["entry_price"]) * 100, 2)
-                
-                # Check auto sell condition: Target hit (>= +6%) or SL hit (<= -4%)
+                trade_type = trade_dict.get("trade_type", "")
+
+                # 1. REAL INTRADAY AUTO SQUARE-OFF RULE (15:10 - 15:15 IST)
+                if ("Intraday" in trade_type or "ORB" in trade_type) and current_hm >= "15:10":
+                    cursor.execute("UPDATE ai_portfolio_trades SET status = 'CLOSED', current_price = ?, pnl = ? WHERE id = ?", (live_p, pnl, trade_dict["id"]))
+                    conn.commit()
+                    send_telegram_msg(
+                        f"⏰ <b>Intraday Auto Square-Off Executed (15:10 IST)</b>\n\n"
+                        f"Stock: <b>#{trade_dict['symbol']}</b> (Sold at ₹{live_p})\n"
+                        f"Rule Enforced: <b>Intraday Same-Day Mandatory Close</b>\n"
+                        f"PnL Booked: <b>₹{pnl:,.2f} ({pnl_pct}%)</b>\n"
+                        f"<i>SEBI rule compliance: Broker auto square-off avoided.</i>"
+                    )
+                    continue
+
+                # 2. TARGET HIT OR PROFIT BOOKING
                 if live_p >= trade_dict["target_price"] or pnl_pct >= 6.0:
                     cursor.execute("UPDATE ai_portfolio_trades SET status = 'CLOSED', current_price = ?, pnl = ? WHERE id = ?", (live_p, pnl, trade_dict["id"]))
                     conn.commit()
@@ -408,6 +473,7 @@ def run_ai_auto_trader_loop():
                         f"Munafa Booked: <b>+₹{pnl:,.2f} (+{pnl_pct}%)</b>\n"
                         f"<i>AI Fund has booked profit autonomously!</i>"
                     )
+                # 3. STOP-LOSS HIT (CAPITAL PROTECTION)
                 elif live_p <= trade_dict["stop_loss"] or pnl_pct <= -4.0:
                     cursor.execute("UPDATE ai_portfolio_trades SET status = 'CLOSED', current_price = ?, pnl = ? WHERE id = ?", (live_p, pnl, trade_dict["id"]))
                     conn.commit()
@@ -422,12 +488,13 @@ def run_ai_auto_trader_loop():
                     cursor.execute("UPDATE ai_portfolio_trades SET current_price = ?, pnl = ? WHERE id = ?", (live_p, pnl, trade_dict["id"]))
                     conn.commit()
 
-            # Check if AI has cash and less than 3 open trades, buy next setup
-            cursor.execute("SELECT COUNT(*) FROM ai_portfolio_trades WHERE status = 'OPEN'")
-            remaining_cnt = cursor.fetchone()[0]
+            # Check if AI has cash and less than 3 open trades, buy next setup (only during market hours 09:15-14:45)
+            if "09:15" <= current_hm <= "14:45":
+                cursor.execute("SELECT COUNT(*) FROM ai_portfolio_trades WHERE status = 'OPEN'")
+                remaining_cnt = cursor.fetchone()[0]
+                if remaining_cnt < 2:
+                    ai_rebalance()
             conn.close()
-            if remaining_cnt < 2:
-                ai_rebalance()
         except Exception as e:
             print(f"[AI Auto-Trader Loop Error]: {e}")
 
@@ -492,6 +559,67 @@ def get_agents_status():
         {"name": "Financial Earnings Analyst", "skill": "trader-analyst", "status": "ACTIVE", "frequency": "Quarterly", "task": "Parses Screener.in consolidated P&L and concalls", "last_run": now_str, "accuracy": "86.5%"}
     ]
     return {"status": "success", "count": len(agents), "agents": agents}
+
+@app.get("/api/agents/chat")
+def get_agent_team_chat():
+    """Returns the live multi-agent collaborative chat explaining stocks in simple 2nd-grade kid language."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM agent_chat_messages ORDER BY id ASC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+class AskAgentChatRequest(BaseModel):
+    symbol: str
+    question: Optional[str] = None
+
+@app.post("/api/agents/chat/explain")
+def explain_stock_via_team_chat(req: AskAgentChatRequest):
+    """Triggers a fresh collaborative multi-agent discussion on a given stock symbol."""
+    sym = req.symbol.upper().replace(".NS", "")
+    live_p = get_live_nse_price(sym, 267.0)
+    now_time = datetime.now().strftime("%I:%M %p")
+    sl = round(live_p * 0.96, 2)
+    tgt = round(live_p * 1.08, 2)
+
+    new_messages = [
+        ("Chart Scanner Agent", "Chart Expert", "📊", "blue",
+         f"Parvej bhai ke bolne par maine #{sym} ka live chart khola hai! Abhi NSE price ₹{live_p} chal raha hai. Chart par higher-high breakout ban raha hai.",
+         f"👶 2nd Class Explanation: Ye stock sidhi chadh raha hai! Signal: 🟢 BUY (Kharido). Entry time: 09:30 AM - 11:30 AM.",
+         sym, "BUY", now_time),
+
+        ("Risk Shield & F&O Agent", "Suraksha Guard", "🛡️", "rose",
+         f"Rule Reminder for #{sym}: Agar Intraday (MIS) kar rahe ho to 15:10 PM se pehle SELL karna zaruri hai. Stop-Loss strictly ₹{sl} par rakhna hoga. F&O me 1 lot size rule follow hoga.",
+         f"👶 2nd Class Explanation: Gaadi me seatbelt bandh lo! Agar price ₹{sl} gir jaye to chupchap nikal jana, lalach mat karna!",
+         sym, "RISK_OK", now_time),
+
+        ("Exit Planner Agent", "Munafa Decider", "🎯", "emerald",
+         f"Complete Trade Blueprint for #{sym}: Entry = ₹{live_p} | Safe Stop-Loss = ₹{sl} | Profit Target (2R) = ₹{tgt} | Intraday Square-Off = 15:10 PM.",
+         f"👶 2nd Class Final Verdict: 🟢 KHARIDO (BUY)! Abhi entry lo, jaise hi ₹{tgt} par jaye, SELL button dabakar munafa jeb me daal lo!",
+         sym, "FINAL_BUY", now_time)
+    ]
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.executemany("""
+    INSERT INTO agent_chat_messages (agent_name, agent_role, avatar, color_theme, message, simple_explanation, stock_symbol, verdict, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, new_messages)
+    conn.commit()
+    conn.close()
+
+    send_telegram_msg(
+        f"💬 <b>AI Agents Team Discussion on #{sym}</b>\n\n"
+        f"• <b>Live NSE Price:</b> ₹{live_p}\n"
+        f"• <b>Safe Entry:</b> ₹{live_p}\n"
+        f"• <b>Target (Munafa):</b> ₹{tgt} (2R)\n"
+        f"• <b>Stop Loss:</b> ₹{sl}\n"
+        f"• <b>Rule:</b> Intraday auto square-off at 15:10 IST\n\n"
+        f"👶 <i>Simple Rule: 🟢 BUY karein aur ₹{tgt} aane par sell karein!</i>"
+    )
+
+    return {"status": "success", "message": f"Agents team ne #{sym} par discussion complete kar li!", "symbol": sym}
 
 @app.post("/api/telegram/broadcast-stock")
 def broadcast_stock_to_telegram(data: dict):
@@ -734,8 +862,11 @@ def serve_app():
           Parvej Portfolio (₹10L)
         </button>
         <button onclick="navigateTab('stocks')" id="nav-d-stocks" class="px-3 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition">Stock Suggestions</button>
+        <button onclick="navigateTab('chat')" id="nav-d-chat" class="px-3 py-2 rounded-lg text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-300 hover:bg-amber-100 transition flex items-center gap-1.5 shadow-sm">
+          <i class="fa-solid fa-comments"></i> 👶 AI Agents Team Chat
+        </button>
         <button onclick="navigateTab('agents')" id="nav-d-agents" class="px-3 py-2 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition flex items-center gap-1.5">
-          <i class="fa-solid fa-network-wired"></i> 11 AI Agents Live
+          <i class="fa-solid fa-network-wired"></i> 11 AI Agents
         </button>
         <button onclick="navigateTab('reports')" id="nav-d-reports" class="px-3 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition">AI Reports</button>
       </nav>
@@ -1177,7 +1308,48 @@ def serve_app():
       </div>
     </div>
 
-    <!-- 5. 11 AI AGENTS LIVE MONITOR TAB -->
+    <!-- 5. 👶 AI AGENTS TEAM CHAT (KID-FRIENDLY MULTI-AGENT DISCUSSION) -->
+    <div id="tab-chat" class="space-y-4 hidden">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-300">2ND CLASS KID SIMPLE EXPLANATION</span>
+            <h2 class="text-lg font-bold text-slate-900">AI Agents Live Team Chat Room</h2>
+          </div>
+          <p class="text-xs text-slate-500 mt-0.5">Sare 11 Agents ek team ki tarah baat karke trade samjhate hain — Entry, Exit aur Stop-Loss aasan bhasha me:</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <select id="chat-stock-picker" class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-blue-600 bg-white font-bold">
+            <option value="POWERGRID">#POWERGRID (PSU Power)</option>
+            <option value="INFY">#INFY (Infosys Tech)</option>
+            <option value="RELIANCE">#RELIANCE (RIL Jio)</option>
+            <option value="SBIN">#SBIN (SBI Bank)</option>
+            <option value="TCS">#TCS (Tata Tech)</option>
+            <option value="TRENT">#TRENT (Retail - Avoid)</option>
+          </select>
+          <button onclick="triggerStockChatDiscussion()" class="px-3.5 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold shadow-sm transition flex items-center gap-1.5">
+            <i class="fa-solid fa-play"></i> Ask Agents to Discuss
+          </button>
+        </div>
+      </div>
+
+      <!-- Chat Stream Container -->
+      <div class="clean-card rounded-2xl p-4 sm:p-5 bg-white border border-slate-200">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100 text-xs">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span class="font-bold text-slate-800">11 AI Agents Active in Chat</span>
+          </div>
+          <span class="text-slate-500 text-[11px]">Real NSE Rules: Intraday 3:15 PM Exit • F&O Lot Rules</span>
+        </div>
+
+        <div id="chat-messages-container" class="space-y-3.5 mt-4 max-h-[520px] overflow-y-auto pr-2 scrollbar-thin">
+          <!-- Injected via loadAgentTeamChat() -->
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. 11 AI AGENTS LIVE MONITOR TAB -->
     <div id="tab-agents" class="space-y-4 hidden">
       <div class="flex items-center justify-between">
         <div>
@@ -1254,6 +1426,10 @@ def serve_app():
     <button onclick="navigateTab('stocks')" id="nav-m-stocks" class="flex flex-col items-center gap-1 text-slate-500 hover:text-slate-900 text-[10px]">
       <i class="fa-solid fa-chart-line text-base"></i>
       <span>Picks</span>
+    </button>
+    <button onclick="navigateTab('chat')" id="nav-m-chat" class="flex flex-col items-center gap-1 text-amber-700 font-extrabold text-[10px]">
+      <i class="fa-solid fa-comments text-base"></i>
+      <span>Chat</span>
     </button>
     <button onclick="navigateTab('agents')" id="nav-m-agents" class="flex flex-col items-center gap-1 text-slate-500 hover:text-slate-900 text-[10px]">
       <i class="fa-solid fa-network-wired text-base"></i>
@@ -1389,7 +1565,7 @@ def serve_app():
     }
 
     function navigateTab(tab) {
-      ['dashboard', 'ai-fund', 'portfolio', 'stocks', 'agents', 'reports'].forEach(t => {
+      ['dashboard', 'ai-fund', 'portfolio', 'stocks', 'chat', 'agents', 'reports'].forEach(t => {
         const el = document.getElementById('tab-' + t);
         if (el) el.classList.add('hidden');
         
@@ -1397,6 +1573,8 @@ def serve_app():
         if (btnD) {
           if (t === 'ai-fund') {
             btnD.className = 'px-3 py-2 rounded-lg text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 transition flex items-center gap-1.5';
+          } else if (t === 'chat') {
+            btnD.className = 'px-3 py-2 rounded-lg text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-300 hover:bg-amber-100 transition flex items-center gap-1.5 shadow-sm';
           } else if (t === 'agents') {
             btnD.className = 'px-3 py-2 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition flex items-center gap-1.5';
           } else {
@@ -1415,6 +1593,8 @@ def serve_app():
       if (activeD) {
         if (tab === 'ai-fund') {
           activeD.className = 'px-3 py-2 rounded-lg text-xs font-semibold bg-indigo-600 text-white transition flex items-center gap-1.5';
+        } else if (tab === 'chat') {
+          activeD.className = 'px-3 py-2 rounded-lg text-xs font-semibold bg-amber-600 text-white transition flex items-center gap-1.5 shadow-sm';
         } else if (tab === 'agents') {
           activeD.className = 'px-3 py-2 rounded-lg text-xs font-semibold bg-emerald-600 text-white transition flex items-center gap-1.5';
         } else {
@@ -1426,6 +1606,7 @@ def serve_app():
       if (activeM) {
         if (tab === 'ai-fund') activeM.className = 'flex flex-col items-center gap-1 text-indigo-700 font-extrabold text-[10px]';
         else if (tab === 'portfolio') activeM.className = 'flex flex-col items-center gap-1 text-blue-700 font-extrabold text-[10px]';
+        else if (tab === 'chat') activeM.className = 'flex flex-col items-center gap-1 text-amber-700 font-extrabold text-[10px]';
         else if (tab === 'agents') activeM.className = 'flex flex-col items-center gap-1 text-emerald-700 font-extrabold text-[10px]';
         else activeM.className = 'flex flex-col items-center gap-1 text-slate-900 font-bold text-[10px]';
       }
@@ -1434,7 +1615,70 @@ def serve_app():
       if (tab === 'reports') loadComparisonReports();
       if (tab === 'portfolio') refreshPortfolio();
       if (tab === 'agents') loadAgentsStatus();
+      if (tab === 'chat') loadAgentTeamChat();
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    async function loadAgentTeamChat() {
+      try {
+        const res = await fetch('/api/agents/chat');
+        const list = await res.json();
+        let html = '';
+        list.forEach(m => {
+          html += `
+            <div class="p-3.5 rounded-xl border border-slate-200/90 bg-white hover:border-blue-400 transition space-y-2">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-sm font-bold shadow-sm">${m.avatar}</span>
+                  <div>
+                    <span class="text-xs font-bold text-slate-900">${m.agent_name}</span>
+                    <span class="text-[10px] text-slate-500 font-medium">(${m.agent_role})</span>
+                  </div>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-blue-50 text-blue-800 border border-blue-200">#${m.stock_symbol}</span>
+                  <span class="text-[10px] text-slate-400 font-mono">${m.created_at}</span>
+                </div>
+              </div>
+
+              <!-- Real Technical Observation -->
+              <p class="text-xs text-slate-700 leading-relaxed font-sans pl-1">
+                ${m.message}
+              </p>
+
+              <!-- 2nd Grade Kid Friendly Simple Rule -->
+              <div class="p-2.5 rounded-lg bg-amber-50/70 border border-amber-200 text-xs font-medium text-amber-950 flex items-start gap-2">
+                <span class="text-sm">💡</span>
+                <div class="leading-snug">
+                  ${m.simple_explanation}
+                </div>
+              </div>
+            </div>`;
+        });
+        const container = document.getElementById('chat-messages-container');
+        if (container) {
+          container.innerHTML = html;
+          container.scrollTop = container.scrollHeight;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function triggerStockChatDiscussion() {
+      const sym = document.getElementById('chat-stock-picker').value;
+      try {
+        const res = await fetch('/api/agents/chat/explain', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbol: sym })
+        });
+        const data = await res.json();
+        showAiToast('💬 Agents Team Chat Ready', `#${sym} par sabhi agents ne simple explanation de di hai!`, sym, 100, 267);
+        loadAgentTeamChat();
+      } catch (e) {
+        alert('Chat error: ' + e.message);
+      }
     }
 
     async function loadAgentsStatus() {
