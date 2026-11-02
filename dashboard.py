@@ -27,7 +27,76 @@ app.add_middleware(
 WORKSPACE_DIR = Path(__file__).resolve().parent
 DB_PATH = WORKSPACE_DIR / "trader" / "tradepilot.db"
 CONFIG_PATH = WORKSPACE_DIR / "trader" / "config.json"
+STATE_BACKUP_PATH = WORKSPACE_DIR / "trader" / "persistent_state.json"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+def save_persistent_state():
+    """Saves portfolio trades and chat to persistent JSON file so data is never erased on server restarts."""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM ai_portfolio_trades")
+        ai_trades = [dict(r) for r in cursor.fetchall()]
+        cursor.execute("SELECT * FROM paper_trades")
+        paper_trades = [dict(r) for r in cursor.fetchall()]
+        cursor.execute("SELECT * FROM agent_chat_messages")
+        chat_msgs = [dict(r) for r in cursor.fetchall()]
+        conn.close()
+
+        state = {
+            "ai_trades": ai_trades,
+            "paper_trades": paper_trades,
+            "chat_msgs": chat_msgs,
+            "updated_at": datetime.now().isoformat()
+        }
+        with open(STATE_BACKUP_PATH, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2)
+    except Exception as e:
+        print(f"[State Backup Error]: {e}")
+
+def restore_persistent_state():
+    """Restores portfolio trades and chat from persistent JSON file if database is ever fresh/re-created."""
+    if not STATE_BACKUP_PATH.exists():
+        return
+    try:
+        with open(STATE_BACKUP_PATH, "r", encoding="utf-8") as f:
+            state = json.load(f)
+        
+        conn = get_db()
+        cursor = conn.cursor()
+
+        # Restore AI trades if DB has 0
+        cursor.execute("SELECT COUNT(*) FROM ai_portfolio_trades")
+        if cursor.fetchone()[0] == 0 and state.get("ai_trades"):
+            for t in state["ai_trades"]:
+                cursor.execute("""
+                INSERT OR IGNORE INTO ai_portfolio_trades (id, agent_name, symbol, trade_type, side, entry_price, current_price, stop_loss, target_price, quantity, invested_amt, pnl, status, reason, created_at)
+                VALUES (:id, :agent_name, :symbol, :trade_type, :side, :entry_price, :current_price, :stop_loss, :target_price, :quantity, :invested_amt, :pnl, :status, :reason, :created_at)
+                """, t)
+
+        # Restore User paper trades if DB has 0
+        cursor.execute("SELECT COUNT(*) FROM paper_trades")
+        if cursor.fetchone()[0] == 0 and state.get("paper_trades"):
+            for t in state["paper_trades"]:
+                cursor.execute("""
+                INSERT OR IGNORE INTO paper_trades (id, user_id, symbol, trade_type, side, entry_price, current_price, stop_loss, target_price, quantity, status, pnl, charges, created_at, closed_at)
+                VALUES (:id, :user_id, :symbol, :trade_type, :side, :entry_price, :current_price, :stop_loss, :target_price, :quantity, :status, :pnl, :charges, :created_at, :closed_at)
+                """, t)
+
+        # Restore chat messages if DB has 0
+        cursor.execute("SELECT COUNT(*) FROM agent_chat_messages")
+        if cursor.fetchone()[0] == 0 and state.get("chat_msgs"):
+            for m in state["chat_msgs"]:
+                cursor.execute("""
+                INSERT OR IGNORE INTO agent_chat_messages (id, agent_name, agent_role, avatar, color_theme, message, simple_explanation, stock_symbol, verdict, created_at)
+                VALUES (:id, :agent_name, :agent_role, :avatar, :color_theme, :message, :simple_explanation, :stock_symbol, :verdict, :created_at)
+                """, m)
+
+        conn.commit()
+        conn.close()
+        print("[State Restored]: Persistent portfolio and chat data loaded successfully!")
+    except Exception as e:
+        print(f"[State Restore Error]: {e}")
 
 # In-memory OTP storage
 OTP_STORAGE = {}
@@ -251,6 +320,7 @@ def init_db():
     conn.close()
 
 init_db()
+restore_persistent_state()
 
 # ----------------- PYDANTIC MODELS -----------------
 class LoginRequest(BaseModel):
@@ -403,6 +473,7 @@ def ai_rebalance():
     """, (chosen["name"], chosen["sym"], chosen["horizon"], live_price, live_price, stop_loss, target_price, qty, invested, chosen["why"], now_ts))
     conn.commit()
     conn.close()
+    save_persistent_state()
 
     send_telegram_msg(
         f"🤖 <b>AI Autonomous Trade Executed (₹10L Fund)</b>\n\n"
@@ -523,6 +594,7 @@ def ai_sell_trade(trade_id: int):
     """, (live_p, pnl, trade_id))
     conn.commit()
     conn.close()
+    save_persistent_state()
 
     send_telegram_msg(
         f"🛑 <b>AI Square-Off Executed</b>\n\n"
@@ -735,6 +807,7 @@ def execute_paper_trade(req: TradeOrderRequest):
     """, (req.user_id, req.symbol, req.trade_type, req.side, live_entry, live_entry, req.stop_loss, req.target_price, req.quantity, charges, now_ts))
     conn.commit()
     conn.close()
+    save_persistent_state()
 
     send_telegram_msg(
         f"⚡ <b>Parvej Executed Trade (₹10L Fund)</b>\n"
@@ -767,6 +840,7 @@ def sell_user_paper_trade(trade_id: int):
     """, (live_p, pnl, now_ts, trade_id))
     conn.commit()
     conn.close()
+    save_persistent_state()
 
     send_telegram_msg(
         f"🛑 <b>Parvej Sold Position</b>\n"

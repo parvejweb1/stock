@@ -1,0 +1,102 @@
+{
+  "ai_trades": [
+    {
+      "id": 6,
+      "agent_name": "Technical Agent",
+      "symbol": "POWERGRID",
+      "trade_type": "Swing (20D)",
+      "side": "BUY",
+      "entry_price": 267.65,
+      "current_price": 267.9,
+      "stop_loss": 256.94,
+      "target_price": 289.06,
+      "quantity": 350,
+      "invested_amt": 93677.5,
+      "pnl": 87.5,
+      "status": "OPEN",
+      "reason": "20-day high breakout + Maharatna Capex clearance",
+      "created_at": "2026-11-02 11:19"
+    },
+    {
+      "id": 7,
+      "agent_name": "Fundamental Agent",
+      "symbol": "INFY",
+      "trade_type": "Swing (CNC)",
+      "side": "BUY",
+      "entry_price": 1174.3,
+      "current_price": 1167.5,
+      "stop_loss": 1127.33,
+      "target_price": 1268.24,
+      "quantity": 80,
+      "invested_amt": 93944.0,
+      "pnl": -544.0,
+      "status": "OPEN",
+      "reason": "Q2 OPM margin expansion + Europe AI enterprise contract",
+      "created_at": "2026-11-02 11:23"
+    }
+  ],
+  "paper_trades": [],
+  "chat_msgs": [
+    {
+      "id": 1,
+      "agent_name": "Chart Scanner Agent",
+      "agent_role": "Chart Expert",
+      "avatar": "\ud83d\udcca",
+      "color_theme": "blue",
+      "message": "Hello Parvej! Maine NIFTY chart scan kiya hai. #POWERGRID 20 dino ki sabse ucchi line (Breakout) tod kar upar ja raha hai!",
+      "simple_explanation": "\ud83d\udc76 Chhota Bachha Rule: Stock pahad ke upar chadha hai! Signal: \ud83d\udfe2 BUY. Entry Time: 09:30 AM, Square-Off: 2 Hafte baad.",
+      "stock_symbol": "POWERGRID",
+      "verdict": "BUY",
+      "created_at": "10:15 AM"
+    },
+    {
+      "id": 2,
+      "agent_name": "News & Sentiment Agent",
+      "agent_role": "Khabar Monitor",
+      "avatar": "\ud83d\udcf0",
+      "color_theme": "amber",
+      "message": "Haan Scanner bhai! Government Ministry ne Power Grid ke naye Renewable capex line ko approve kar diya hai. Badi news aayi hai!",
+      "simple_explanation": "\ud83d\udc76 Chhota Bachha Rule: Sarkar ne is company ko nayi railgaadi jaisa bada kaam diya hai, company ko bohot munafa hoga!",
+      "stock_symbol": "POWERGRID",
+      "verdict": "STRONG_BUY",
+      "created_at": "10:16 AM"
+    },
+    {
+      "id": 3,
+      "agent_name": "Smart Money Agent",
+      "agent_role": "Bade Log Tracker",
+      "avatar": "\ud83d\udcbc",
+      "color_theme": "indigo",
+      "message": "Exchange filings check ki: Company ke khud ke maliko (Promoters) ne open market se \u20b935 Crore ke shares khareede hain!",
+      "simple_explanation": "\ud83d\udc76 Chhota Bachha Rule: Jab dukaandar apni hi dukan ki cheezein khareed raha ho, matlab cheez bohot meethi hai!",
+      "stock_symbol": "POWERGRID",
+      "verdict": "BUY",
+      "created_at": "10:18 AM"
+    },
+    {
+      "id": 4,
+      "agent_name": "Risk Shield & F&O Agent",
+      "agent_role": "Suraksha Guard",
+      "avatar": "\ud83d\udee1\ufe0f",
+      "color_theme": "rose",
+      "message": "Ruko! Indian SEBI & Broker Rule: Intraday me 3:15 PM se pehle nikalna lazmi hai warna broker fine lagayega. F&O me 1 lot size rule follow hoga. Swing trade me holding safe hai. \u20b920 se jyada loss nahi hona chahiye!",
+      "simple_explanation": "\ud83d\udc76 Chhota Bachha Rule: Helmet pehen kar gaadi chalao! Stop-Loss \u20b9255 set karo. Agar \u20b9255 par gaya to chupchap bahar aa jao, zidd mat karo!",
+      "stock_symbol": "POWERGRID",
+      "verdict": "HOLD_WITH_SL",
+      "created_at": "10:20 AM"
+    },
+    {
+      "id": 5,
+      "agent_name": "Exit Planner Agent",
+      "agent_role": "Munafa Decider",
+      "avatar": "\ud83c\udfaf",
+      "color_theme": "emerald",
+      "message": "Verdict Clear: Entry = \u20b9267. Target = \u20b9289 (2R Return). Stop-Loss = \u20b9256. Intraday Exit Time = 15:10 PM. F&O Lot Rule = Verified.",
+      "simple_explanation": "\ud83d\udc76 Final Decision: \ud83d\udfe2 KHARIDO (BUY). Entry abhi lo, Jab price \u20b9289 par pahunche tab SELL karke chocolate kha lena!",
+      "stock_symbol": "POWERGRID",
+      "verdict": "FINAL_BUY",
+      "created_at": "10:22 AM"
+    }
+  ],
+  "updated_at": "2026-11-02T12:32:58.053972"
+}
